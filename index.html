@@ -3,7 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Minecraft 2D 冒險 - 大地圖與雙武器版</title>
+    <title>Minecraft 3D 冒險 - 大世界與雙武器版</title>
+    <!-- 引入 Three.js 3D 繪圖庫 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <style>
         * {
             box-sizing: border-box;
@@ -12,26 +14,36 @@
             user-select: none;
         }
         body {
-            background-color: #1a1a1a;
+            background-color: #000;
             color: #fff;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             overflow: hidden;
-            display: flex;
-            justify-content: center;
-            align-items: center;
+            width: 100vw;
             height: 100vh;
         }
         #game-container {
-            position: relative;
-            width: 100vw;
-            height: 100vh;
-            background-color: #000;
-        }
-        canvas {
-            display: block;
             width: 100%;
             height: 100%;
+            position: relative;
         }
+        /* 畫面中央準心 */
+        #crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 12px;
+            height: 12px;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+        }
+        #crosshair::before, #crosshair::after {
+            content: '';
+            position: absolute;
+            background: rgba(255, 255, 255, 0.8);
+        }
+        #crosshair::before { top: 5px; left: 0; width: 12px; height: 2px; }
+        #crosshair::after { top: 0; left: 5px; width: 2px; height: 12px; }
+
         /* UI 介面 */
         #ui-layer {
             position: absolute;
@@ -51,13 +63,13 @@
             border-radius: 10px;
             border: 2px solid #444;
             display: inline-block;
-            max-width: 300px;
+            max-width: 280px;
         }
         .bar-container {
             width: 100%;
-            height: 18px;
+            height: 16px;
             background: #333;
-            border-radius: 9px;
+            border-radius: 8px;
             margin-top: 6px;
             overflow: hidden;
             border: 1px solid #555;
@@ -76,6 +88,7 @@
             padding: 8px;
             border-radius: 12px;
             border: 2px solid #555;
+            pointer-events: auto;
         }
         .slot {
             width: 60px;
@@ -91,6 +104,7 @@
             font-weight: bold;
             color: #aaa;
             position: relative;
+            cursor: pointer;
         }
         .slot.active {
             border-color: #ffe600;
@@ -105,22 +119,39 @@
             font-size: 10px;
             color: #888;
         }
+
+        /* 鎖定滑鼠提示畫面 */
+        #blocker {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.7);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 10;
+            cursor: pointer;
+        }
+        #instructions {
+            text-align: center;
+            color: white;
+        }
+        #instructions h1 { font-size: 36px; margin-bottom: 10px; }
+        #instructions p { font-size: 18px; color: #ccc; margin: 5px 0; }
+
         /* 受傷紅框特效 */
         #damage-overlay {
             position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(255, 0, 0, 0.3);
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(255, 0, 0, 0.35);
             pointer-events: none;
             opacity: 0;
             transition: opacity 0.1s ease-out;
         }
         #game-over {
             position: absolute;
-            top: 50%;
-            left: 50%;
+            top: 50%; left: 50%;
             transform: translate(-50%, -50%);
             background: rgba(0, 0, 0, 0.9);
             padding: 40px;
@@ -128,7 +159,7 @@
             border: 3px solid #ff3333;
             text-align: center;
             display: none;
-            pointer-events: auto;
+            z-index: 20;
         }
         #game-over button {
             margin-top: 20px;
@@ -141,516 +172,507 @@
             cursor: pointer;
             font-weight: bold;
         }
-        #game-over button:hover {
-            background: #cc0000;
-        }
     </style>
 </head>
 <body>
     <div id="game-container">
-        <canvas id="gameCanvas"></canvas>
+        <div id="crosshair"></div>
         <div id="damage-overlay"></div>
+
+        <div id="blocker">
+            <div id="instructions">
+                <h1>點擊畫面開始遊戲</h1>
+                <p>WASD / 方向鍵：移動</p>
+                <p>滑鼠：旋轉 3D 視角</p>
+                <p>滑鼠左鍵：攻擊 / 射擊</p>
+                <p>數字鍵 1 / 2：切換武器（刀 / 弓）</p>
+            </div>
+        </div>
+
         <div id="ui-layer">
             <div class="stats-panel">
                 <div>❤️ 生命值: <span id="hp-text">100</span> / 100</div>
                 <div class="bar-container"><div id="hp-bar" class="hp-bar"></div></div>
-                <div style="margin-top: 10px;">🎯 擊殺數: <span id="score-text">0</span></div>
+                <div style="margin-top: 8px;">🎯 擊殺數: <span id="score-text">0</span></div>
             </div>
             <div class="hotbar">
-                <div class="slot active" id="slot-1">
+                <div class="slot active" id="slot-1" onclick="setWeapon('sword')">
                     <span class="slot-key">1</span>
-                    ⚔️ 鐵劍
+                    ⚔️ 鑽石劍
                 </div>
-                <div class="slot" id="slot-2">
+                <div class="slot" id="slot-2" onclick="setWeapon('bow')">
                     <span class="slot-key">2</span>
                     🏹 弓箭
                 </div>
             </div>
         </div>
+
         <div id="game-over">
-            <h1>💀 你體力不支倒下了！</h1>
+            <h1>💀 你倒下了！</h1>
             <p style="margin-top: 10px; color: #aaa;">生存戰績: <span id="final-score">0</span> 隻怪物</p>
             <button onclick="resetGame()">重新開始</button>
         </div>
     </div>
 
     <script>
-        const canvas = document.getElementById('gameCanvas');
-        const ctx = canvas.getContext('2d');
-        const damageOverlay = document.getElementById('damage-overlay');
+        // ---------------------------------------------------------------
+        // 1. 初始化 3D 場景、攝影機與渲染器
+        // ---------------------------------------------------------------
+        const container = document.getElementById('game-container');
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x87ceeb); // 天空藍
+        scene.fog = new THREE.FogExp2(0x87ceeb, 0.015); // 遠方迷霧
 
-        // 地圖設定（擴大至 3000 x 3000，體驗遼闊感）
-        const MAP_SIZE = 3000;
-        const GRID_SIZE = 60;
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        container.appendChild(renderer.domElement);
 
-        // 畫布自動縮放
-        function resize() {
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
+        // 光源設定
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        scene.add(ambientLight);
+
+        const sunLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        sunLight.position.set(100, 150, 50);
+        sunLight.castShadow = true;
+        sunLight.shadow.mapSize.width = 2048;
+        sunLight.shadow.mapSize.height = 2048;
+        sunLight.shadow.camera.near = 0.5;
+        sunLight.shadow.camera.far = 300;
+        const d = 100;
+        sunLight.shadow.camera.left = -d;
+        sunLight.shadow.camera.right = d;
+        sunLight.shadow.camera.top = d;
+        sunLight.shadow.camera.bottom = -d;
+        scene.add(sunLight);
+
+        // ---------------------------------------------------------------
+        // 2. 地形生成 (放大版 3D 世界)
+        // ---------------------------------------------------------------
+        const WORLD_SIZE = 160; // 超大 3D 地形
+        const HALF_WORLD = WORLD_SIZE / 2;
+
+        // 草地地面
+        const groundGeo = new THREE.PlaneGeometry(WORLD_SIZE, WORLD_SIZE, 32, 32);
+        const groundMat = new THREE.MeshStandardMaterial({ color: 0x557a2b, roughness: 0.9 });
+        const ground = new THREE.Mesh(groundGeo, groundMat);
+        ground.rotation.x = -Math.PI / 2;
+        ground.receiveShadow = true;
+        scene.add(ground);
+
+        // 邊界牆碰撞箱列表
+        const obstacles = [];
+
+        // 隨機生成 3D 樹木
+        function createTree(x, z) {
+            const treeGroup = new THREE.Group();
+            
+            // 樹幹
+            const trunkGeo = new THREE.BoxGeometry(1, 4, 1);
+            const trunkMat = new THREE.MeshStandardMaterial({ color: 0x5c4033 });
+            const trunk = new THREE.Mesh(trunkGeo, trunkMat);
+            trunk.position.y = 2;
+            trunk.castShadow = true;
+            treeGroup.add(trunk);
+
+            // 樹葉 (Minecraft 方塊風格)
+            const leavesGeo = new THREE.BoxGeometry(3, 3, 3);
+            const leavesMat = new THREE.MeshStandardMaterial({ color: 0x2e8b57 });
+            const leaves = new THREE.Mesh(leavesGeo, leavesMat);
+            leaves.position.y = 4.5;
+            leaves.castShadow = true;
+            treeGroup.add(leaves);
+
+            treeGroup.position.set(x, 0, z);
+            scene.add(treeGroup);
+
+            // 紀錄碰撞箱 (AABB 邏輯)
+            obstacles.push({
+                minX: x - 0.8, maxX: x + 0.8,
+                minZ: z - 0.8, maxZ: z + 0.8
+            });
         }
-        window.addEventListener('resize', resize);
-        resize();
 
-        // 按鍵監聽
+        // 生成 60 棵樹木
+        for (let i = 0; i < 60; i++) {
+            const tx = (Math.random() - 0.5) * (WORLD_SIZE - 20);
+            const tz = (Math.random() - 0.5) * (WORLD_SIZE - 20);
+            if (Math.hypot(tx, tz) > 8) { // 避開出生點
+                createTree(tx, tz);
+            }
+        }
+
+        // 世界邊界障礙物
+        obstacles.push({ minX: -HALF_WORLD, maxX: -HALF_WORLD + 1, minZ: -HALF_WORLD, maxZ: HALF_WORLD });
+        obstacles.push({ minX: HALF_WORLD - 1, maxX: HALF_WORLD, minZ: -HALF_WORLD, maxZ: HALF_WORLD });
+        obstacles.push({ minX: -HALF_WORLD, maxX: HALF_WORLD, minZ: -HALF_WORLD, maxZ: -HALF_WORLD + 1 });
+        obstacles.push({ minX: -HALF_WORLD, maxX: HALF_WORLD, minZ: HALF_WORLD - 1, maxZ: HALF_WORLD });
+
+        // ---------------------------------------------------------------
+        // 3. 玩家控制與 Minecraft 3D AABB 碰撞機制
+        // ---------------------------------------------------------------
+        const player = {
+            position: new THREE.Vector3(0, 1.6, 0), // 視線高度 1.6m
+            velocity: new THREE.Vector3(),
+            radius: 0.4, // AABB 半寬
+            speed: 0.15,
+            hp: 100,
+            score: 0,
+            activeWeapon: 'sword',
+            attackCooldown: 0,
+            isDead: false
+        };
+
+        // 第一人稱視角旋轉控制 (PointerLock)
+        let pitch = 0, yaw = 0;
+        const blocker = document.getElementById('blocker');
+        
+        blocker.addEventListener('click', () => {
+            document.body.requestPointerLock();
+        });
+
+        document.addEventListener('pointerlockchange', () => {
+            if (document.pointerLockElement === document.body) {
+                blocker.style.display = 'none';
+            } else {
+                if (!player.isDead) blocker.style.display = 'flex';
+            }
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (document.pointerLockElement !== document.body || player.isDead) return;
+            yaw -= e.movementX * 0.0022;
+            pitch -= e.movementY * 0.0022;
+            pitch = Math.max(-Math.PI / 2.2, Math.min(Math.PI / 2.2, pitch));
+        });
+
+        // 鍵盤狀態
         const keys = {};
-        window.addEventListener('keydown', e => {
+        document.addEventListener('keydown', (e) => {
             keys[e.key.toLowerCase()] = true;
             if (e.key === '1') setWeapon('sword');
             if (e.key === '2') setWeapon('bow');
         });
-        window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+        document.addEventListener('keyup', (e) => keys[e.key.toLowerCase()] = false);
 
-        // 滑鼠位置與點擊
-        const mouse = { x: 0, y: 0, worldX: 0, worldY: 0, isDown: false };
-        window.addEventListener('mousemove', e => {
-            mouse.x = e.clientX;
-            mouse.y = e.clientY;
-        });
-        window.addEventListener('mousedown', e => {
-            if (e.button === 0) {
-                mouse.isDown = true;
-                playerAttack();
-            }
-        });
-        window.addEventListener('mouseup', e => { if (e.button === 0) mouse.isDown = false; });
+        // 3D AABB 滑順貼牆移動邏輯
+        function movePlayerWithCollision(dx, dz) {
+            // 先在 X 軸移動並檢測碰撞
+            let newX = player.position.x + dx;
+            let playerMinX = newX - player.radius;
+            let playerMaxX = newX + player.radius;
+            let playerMinZ = player.position.z - player.radius;
+            let playerMaxZ = player.position.z + player.radius;
 
-        // 攝影機物件（帶有滑順 Lerp 追蹤）
-        const camera = { x: MAP_SIZE / 2, y: MAP_SIZE / 2 };
-
-        // 玩家物件（物理 AABB 碰撞箱）
-        const player = {
-            x: MAP_SIZE / 2,
-            y: MAP_SIZE / 2,
-            width: 32,
-            height: 32,
-            speed: 5,
-            hp: 100,
-            maxHp: 100,
-            activeWeapon: 'sword', // 'sword' 或 'bow'
-            attackCooldown: 0,
-            swordSwingAngle: 0,
-            isSwinging: false,
-            score: 0,
-            isDead: false
-        };
-
-        // 障礙物列表 (樹木與岩石)
-        const obstacles = [];
-        function generateWorld() {
-            obstacles.length = 0;
-            // 隨機生成 120 個障礙物
-            for (let i = 0; i < 120; i++) {
-                const type = Math.random() > 0.4 ? 'tree' : 'rock';
-                const size = type === 'tree' ? 50 : 40;
-                const ox = Math.random() * (MAP_SIZE - 400) + 200;
-                const oy = Math.random() * (MAP_SIZE - 400) + 200;
-
-                // 避開出生點
-                if (Math.hypot(ox - player.x, oy - player.y) > 200) {
-                    obstacles.push({ x: ox, y: oy, width: size, height: size, type });
-                }
-            }
-        }
-
-        // 怪物與投射物
-        const monsters = [];
-        const projectiles = [];
-        const particles = [];
-
-        function spawnMonster() {
-            if (monsters.length >= 25 || player.isDead) return;
-            // 在玩家視線外隨機生成
-            const angle = Math.random() * Math.PI * 2;
-            const dist = Math.random() * 500 + 600;
-            let mx = player.x + Math.cos(angle) * dist;
-            let my = player.y + Math.sin(angle) * dist;
-
-            // 確保不出界
-            mx = Math.max(100, Math.min(MAP_SIZE - 100, mx));
-            my = Math.max(100, Math.min(MAP_SIZE - 100, my));
-
-            monsters.push({
-                x: mx,
-                y: my,
-                width: 32,
-                height: 32,
-                speed: 2.2 + Math.random() * 0.8,
-                hp: 30,
-                maxHp: 30,
-                attackCooldown: 0,
-                color: '#44aa44' // 經典苦力怕/殭屍綠
-            });
-        }
-        setInterval(spawnMonster, 2000);
-
-        // AABB 矩形碰撞檢測 (Minecraft 碰撞標準)
-        function checkAABB(rect1, rect2) {
-            return rect1.x - rect1.width/2 < rect2.x + rect2.width/2 &&
-                   rect1.x + rect1.width/2 > rect2.x - rect2.width/2 &&
-                   rect1.y - rect1.height/2 < rect2.y + rect2.height/2 &&
-                   rect1.y + rect1.height/2 > rect2.y - rect2.height/2;
-        }
-
-        // Minecraft 風格：滑順沿牆移動邏輯
-        function moveWithCollision(entity, vx, vy) {
-            // 先嘗試 X 軸移動
-            entity.x += vx;
+            let collideX = false;
             for (let obs of obstacles) {
-                if (checkAABB(entity, obs)) {
-                    if (vx > 0) entity.x = obs.x - obs.width/2 - entity.width/2;
-                    if (vx < 0) entity.x = obs.x + obs.width/2 + entity.width/2;
+                if (playerMaxX > obs.minX && playerMinX < obs.maxX &&
+                    playerMaxZ > obs.minZ && playerMinZ < obs.maxZ) {
+                    collideX = true;
+                    break;
                 }
             }
-            // 再嘗試 Y 軸移動
-            entity.y += vy;
+            if (!collideX) player.position.x = newX;
+
+            // 再在 Z 軸移動並檢測碰撞
+            let newZ = player.position.z + dz;
+            playerMinX = player.position.x - player.radius;
+            playerMaxX = player.position.x + player.radius;
+            playerMinZ = newZ - player.radius;
+            playerMaxZ = newZ + player.radius;
+
+            let collideZ = false;
             for (let obs of obstacles) {
-                if (checkAABB(entity, obs)) {
-                    if (vy > 0) entity.y = obs.y - obs.height/2 - entity.height/2;
-                    if (vy < 0) entity.y = obs.y + obs.height/2 + entity.height/2;
+                if (playerMaxX > obs.minX && playerMinX < obs.maxX &&
+                    playerMaxZ > obs.minZ && playerMinZ < obs.maxZ) {
+                    collideZ = true;
+                    break;
                 }
             }
-            // 邊界限制
-            entity.x = Math.max(entity.width/2, Math.min(MAP_SIZE - entity.width/2, entity.x));
-            entity.y = Math.max(entity.height/2, Math.min(MAP_SIZE - entity.height/2, entity.y));
+            if (!collideZ) player.position.z = newZ;
         }
 
-        // 切換武器
+        // ---------------------------------------------------------------
+        // 4. 3D 雙武器系統 (第一人稱刀與弓模型)
+        // ---------------------------------------------------------------
+        const weaponGroup = new THREE.Group();
+        camera.add(weaponGroup);
+        scene.add(camera);
+
+        // 刀 (鑽石劍模型)
+        const swordGroup = new THREE.Group();
+        const bladeGeo = new THREE.BoxGeometry(0.08, 0.8, 0.04);
+        const bladeMat = new THREE.MeshStandardMaterial({ color: 0x00ffff, roughness: 0.3 }); // 鑽石藍
+        const blade = new THREE.Mesh(bladeGeo, bladeMat);
+        blade.position.set(0, 0.4, 0);
+        swordGroup.add(blade);
+
+        const hiltGeo = new THREE.BoxGeometry(0.3, 0.06, 0.06);
+        const hiltMat = new THREE.MeshStandardMaterial({ color: 0x8b4513 });
+        const hilt = new THREE.Mesh(hiltGeo, hiltMat);
+        hilt.position.set(0, 0.05, 0);
+        swordGroup.add(hilt);
+
+        swordGroup.position.set(0.35, -0.3, -0.5);
+        swordGroup.rotation.set(0.2, -0.3, 0);
+        weaponGroup.add(swordGroup);
+
+        // 弓模型
+        const bowGroup = new THREE.Group();
+        const bowGeo = new THREE.TorusGeometry(0.3, 0.02, 8, 16, Math.PI);
+        const bowMat = new THREE.MeshStandardMaterial({ color: 0x8b4513 });
+        const bow = new THREE.Mesh(bowGeo, bowMat);
+        bowGroup.add(bow);
+        bowGroup.position.set(0.35, -0.3, -0.5);
+        bowGroup.rotation.set(0, -Math.PI / 2, 0);
+        bowGroup.visible = false;
+        weaponGroup.add(bowGroup);
+
         function setWeapon(type) {
             player.activeWeapon = type;
+            swordGroup.visible = (type === 'sword');
+            bowGroup.visible = (type === 'bow');
             document.getElementById('slot-1').classList.toggle('active', type === 'sword');
             document.getElementById('slot-2').classList.toggle('active', type === 'bow');
         }
 
-        // 玩家攻擊發動
-        function playerAttack() {
-            if (player.attackCooldown > 0 || player.isDead) return;
+        // 攻擊事件 (滑鼠點擊)
+        let isSwinging = false;
+        let swingTimer = 0;
 
-            const aimAngle = Math.atan2(mouse.worldY - player.y, mouse.worldX - player.x);
+        document.addEventListener('mousedown', (e) => {
+            if (e.button !== 0 || document.pointerLockElement !== document.body || player.isDead) return;
+            if (player.attackCooldown > 0) return;
 
             if (player.activeWeapon === 'sword') {
-                // 刀：近戰揮砍 (冷卻短、範圍廣)
+                // 刀近戰砍擊
                 player.attackCooldown = 15;
-                player.isSwinging = true;
-                player.swordSwingAngle = aimAngle - Math.PI / 3;
+                isSwinging = true;
+                swingTimer = 0;
 
-                // 擊中判定 (扇形近戰範圍)
+                // 3D 扇形攻擊檢測
+                const forward = new THREE.Vector3();
+                camera.getWorldDirection(forward);
+
                 monsters.forEach(m => {
-                    const dist = Math.hypot(m.x - player.x, m.y - player.y);
-                    if (dist < 85) {
-                        const angleToMonster = Math.atan2(m.y - player.y, m.x - player.x);
-                        let angleDiff = Math.abs(angleToMonster - aimAngle);
-                        if (angleDiff > Math.PI) angleDiff = Math.PI * 2 - angleDiff;
+                    const toMonster = m.mesh.position.clone().sub(player.position);
+                    const dist = toMonster.length();
+                    toMonster.normalize();
 
-                        if (angleDiff < Math.PI / 2.5) {
-                            m.hp -= 18;
-                            // 擊退效果
-                            m.x += Math.cos(aimAngle) * 20;
-                            m.y += Math.sin(aimAngle) * 20;
-                            createParticles(m.x, m.y, '#ff4444', 5);
-                        }
+                    // 距離小於 3.5 公尺且在視線前方 60 度角內
+                    if (dist < 3.5 && forward.dot(toMonster) > 0.5) {
+                        m.hp -= 20;
+                        // 擊退
+                        m.mesh.position.add(forward.clone().multiplyScalar(1.2));
                     }
                 });
             } else if (player.activeWeapon === 'bow') {
-                // 弓：遠程射擊
-                player.attackCooldown = 30;
-                projectiles.push({
-                    x: player.x,
-                    y: player.y,
-                    vx: Math.cos(aimAngle) * 12,
-                    vy: Math.sin(aimAngle) * 12,
-                    life: 60
-                });
+                // 弓箭遠程射擊
+                player.attackCooldown = 25;
+                shootArrow();
             }
+        });
+
+        // ---------------------------------------------------------------
+        // 5. 箭矢與怪物系統 (3D 苦力怕)
+        // ---------------------------------------------------------------
+        const arrows = [];
+        const monsters = [];
+
+        function shootArrow() {
+            const arrowGeo = new THREE.CylinderGeometry(0.02, 0.02, 0.6);
+            const arrowMat = new THREE.MeshStandardMaterial({ color: 0xdddddd });
+            const arrow = new THREE.Mesh(arrowGeo, arrowMat);
+
+            arrow.position.copy(player.position);
+            
+            const dir = new THREE.Vector3();
+            camera.getWorldDirection(dir);
+            arrow.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+
+            scene.add(arrow);
+            arrows.push({ mesh: arrow, dir: dir, velocity: 1.2, life: 100 });
         }
 
-        // 擊中粒子特效
-        function createParticles(x, y, color, count) {
-            for (let i = 0; i < count; i++) {
-                particles.push({
-                    x, y,
-                    vx: (Math.random() - 0.5) * 6,
-                    vy: (Math.random() - 0.5) * 6,
-                    color,
-                    life: 15
-                });
-            }
-        }
+        function spawnMonster() {
+            if (monsters.length >= 20 || player.isDead) return;
 
-        // 觸發受傷效果
+            // 在玩家身邊隨機距離生成 3D 苦力怕
+            const angle = Math.random() * Math.PI * 2;
+            const dist = 25 + Math.random() * 15;
+            const mx = player.position.x + Math.cos(angle) * dist;
+            const mz = player.position.z + Math.sin(angle) * dist;
+
+            // 苦力怕 3D 模型
+            const mGroup = new THREE.Group();
+            const bodyGeo = new THREE.BoxGeometry(0.8, 1.8, 0.8);
+            const bodyMat = new THREE.MeshStandardMaterial({ color: 0x33aa33 }); // 苦力怕綠
+            const body = new THREE.Mesh(bodyGeo, bodyMat);
+            body.position.y = 0.9;
+            body.castShadow = true;
+            mGroup.add(body);
+
+            mGroup.position.set(mx, 0, mz);
+            scene.add(mGroup);
+
+            monsters.push({
+                mesh: mGroup,
+                hp: 35,
+                maxHp: 35,
+                speed: 0.05,
+                attackCooldown: 0
+            });
+        }
+        setInterval(spawnMonster, 2500);
+
+        // 觸發受傷特效
+        const damageOverlay = document.getElementById('damage-overlay');
         function triggerDamage() {
             damageOverlay.style.opacity = '1';
-            setTimeout(() => { damageOverlay.style.opacity = '0'; }, 100);
+            setTimeout(() => { damageOverlay.style.opacity = '0'; }, 120);
         }
 
-        // 更新遊戲數據與邏輯
-        function update() {
-            if (player.isDead) return;
+        // ---------------------------------------------------------------
+        // 6. 遊戲主循環 (60 FPS 絲滑運算)
+        // ---------------------------------------------------------------
+        const clock = new THREE.Clock();
 
-            // 1. 玩家移動輸入
-            let moveX = 0;
-            let moveY = 0;
-            if (keys['w'] || keys['arrowup']) moveY -= 1;
-            if (keys['s'] || keys['arrowdown']) moveY += 1;
-            if (keys['a'] || keys['arrowleft']) moveX -= 1;
-            if (keys['d'] || keys['arrowright']) moveX += 1;
+        function animate() {
+            requestAnimationFrame(animate);
 
-            if (moveX !== 0 && moveY !== 0) {
-                moveX *= 0.7071;
-                moveY *= 0.7071;
+            if (player.isDead) {
+                renderer.render(scene, camera);
+                return;
             }
-            moveWithCollision(player, moveX * player.speed, moveY * player.speed);
 
-            // 2. 攝影機極致絲滑插值 (Lerp)
-            camera.x += (player.x - camera.x) * 0.1;
-            camera.y += (player.y - camera.y) * 0.1;
+            // A. 更新視角方向
+            const euler = new THREE.Euler(0, 0, 0, 'YXZ');
+            euler.x = pitch;
+            euler.y = yaw;
+            camera.quaternion.setFromEuler(euler);
 
-            // 更新世界滑鼠座標
-            mouse.worldX = mouse.x - canvas.width / 2 + camera.x;
-            mouse.worldY = mouse.y - canvas.height / 2 + camera.y;
+            // B. 玩家 3D WASD 移動計算
+            const moveDir = new THREE.Vector3();
+            if (keys['w']) moveDir.z -= 1;
+            if (keys['s']) moveDir.z += 1;
+            if (keys['a']) moveDir.x -= 1;
+            if (keys['d']) moveDir.x += 1;
+            moveDir.normalize();
 
-            // 3. 武器揮刀動畫與冷卻
+            if (moveDir.length() > 0) {
+                // 將相對方向轉為世界方向
+                moveDir.applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
+                movePlayerWithCollision(moveDir.x * player.speed, moveDir.z * player.speed);
+            }
+            camera.position.copy(player.position);
+
+            // C. 刀揮砍動畫
             if (player.attackCooldown > 0) player.attackCooldown--;
-            if (player.isSwinging) {
-                player.swordSwingAngle += 0.2;
-                if (player.swordSwingAngle >= Math.atan2(mouse.worldY - player.y, mouse.worldX - player.x) + Math.PI / 3) {
-                    player.isSwinging = false;
+            if (isSwinging) {
+                swingTimer += 0.2;
+                swordGroup.rotation.x = 0.2 + Math.sin(swingTimer * Math.PI) * 1.2;
+                swordGroup.rotation.y = -0.3 - Math.sin(swingTimer * Math.PI) * 0.8;
+                if (swingTimer >= 1) {
+                    isSwinging = false;
+                    swordGroup.rotation.set(0.2, -0.3, 0);
                 }
             }
 
-            // 4. 箭矢更新
-            for (let i = projectiles.length - 1; i >= 0; i--) {
-                let p = projectiles[i];
-                p.x += p.vx;
-                p.y += p.vy;
-                p.life--;
+            // D. 箭矢飛行與碰撞
+            for (let i = arrows.length - 1; i >= 0; i--) {
+                const arr = arrows[i];
+                arr.mesh.position.add(arr.dir.clone().multiplyScalar(arr.velocity));
+                arr.life--;
 
-                // 碰撞怪物
                 let hit = false;
                 for (let m of monsters) {
-                    if (checkAABB({ x: p.x, y: p.y, width: 10, height: 10 }, m)) {
+                    if (arr.mesh.position.distanceTo(m.mesh.position.clone().add(new THREE.Vector3(0, 0.9, 0))) < 1.0) {
                         m.hp -= 25;
-                        m.x += p.vx * 0.3;
-                        m.y += p.vy * 0.3;
-                        createParticles(m.x, m.y, '#999', 6);
                         hit = true;
                         break;
                     }
                 }
-                // 碰撞障礙物
-                if (!hit) {
-                    for (let obs of obstacles) {
-                        if (checkAABB({ x: p.x, y: p.y, width: 8, height: 8 }, obs)) {
-                            hit = true;
-                            break;
-                        }
-                    }
+
+                if (hit || arr.life <= 0) {
+                    scene.remove(arr.mesh);
+                    arrows.splice(i, 1);
                 }
-                if (hit || p.life <= 0) projectiles.splice(i, 1);
             }
 
-            // 5. 怪物邏輯與傷害計算
+            // E. 怪物 AI 追逐與攻擊傷害邏輯
             for (let i = monsters.length - 1; i >= 0; i--) {
-                let m = monsters[i];
+                const m = monsters[i];
+
                 if (m.hp <= 0) {
-                    createParticles(m.x, m.y, '#44aa44', 12);
+                    scene.remove(m.mesh);
                     monsters.splice(i, 1);
                     player.score++;
                     document.getElementById('score-text').innerText = player.score;
                     continue;
                 }
 
-                // 怪物朝玩家移動
-                const angle = Math.atan2(player.y - m.y, player.x - m.x);
-                const mvx = Math.cos(angle) * m.speed;
-                const mvy = Math.sin(angle) * m.speed;
-                moveWithCollision(m, mvx, mvy);
+                // 怪物朝玩家靠近
+                const toPlayer = player.position.clone().sub(m.mesh.position);
+                toPlayer.y = 0; // 保持在地平面
+                const dist = toPlayer.length();
 
-                // 怪物攻擊玩家（Minecraft 物理接觸傷害）
-                if (checkAABB(player, m)) {
+                if (dist > 1.1) {
+                    toPlayer.normalize();
+                    m.mesh.position.add(toPlayer.multiplyScalar(m.speed));
+                    m.mesh.lookAt(player.position.x, 0, player.position.z);
+                } else {
+                    // 怪物攻擊傷害機制
                     if (m.attackCooldown <= 0) {
-                        player.hp -= 12; // 造成的傷害值
-                        m.attackCooldown = 45; // 攻擊冷卻時間
+                        player.hp -= 15;
+                        m.attackCooldown = 50;
                         triggerDamage();
 
-                        // 玩家被小幅度擊退
-                        player.x += Math.cos(angle) * 10;
-                        player.y += Math.sin(angle) * 10;
-
-                        // 更新 UI 生命條
                         document.getElementById('hp-text').innerText = Math.max(0, player.hp);
                         document.getElementById('hp-bar').style.width = Math.max(0, player.hp) + '%';
 
                         if (player.hp <= 0) {
                             player.isDead = true;
+                            document.exitPointerLock();
                             document.getElementById('final-score').innerText = player.score;
                             document.getElementById('game-over').style.display = 'block';
                         }
                     }
                 }
+
                 if (m.attackCooldown > 0) m.attackCooldown--;
             }
 
-            // 6. 粒子效果更新
-            for (let i = particles.length - 1; i >= 0; i--) {
-                let pt = particles[i];
-                pt.x += pt.vx;
-                pt.y += pt.vy;
-                pt.life--;
-                if (pt.life <= 0) particles.splice(i, 1);
-            }
-        }
-
-        // 渲染畫面
-        function render() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-            ctx.save();
-            // 視角置中跟隨
-            ctx.translate(canvas.width / 2 - camera.x, canvas.height / 2 - camera.y);
-
-            // A. 繪製草地背景與網格線
-            ctx.fillStyle = '#4a7c59';
-            ctx.fillRect(0, 0, MAP_SIZE, MAP_SIZE);
-
-            ctx.strokeStyle = 'rgba(0, 0, 0, 0.05)';
-            ctx.lineWidth = 2;
-            for (let x = 0; x < MAP_SIZE; x += GRID_SIZE) {
-                ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, MAP_SIZE); ctx.stroke();
-            }
-            for (let y = 0; y < MAP_SIZE; y += GRID_SIZE) {
-                ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(MAP_SIZE, y); ctx.stroke();
-            }
-
-            // 地圖邊界牆
-            ctx.strokeStyle = '#ff3333';
-            ctx.lineWidth = 8;
-            ctx.strokeRect(0, 0, MAP_SIZE, MAP_SIZE);
-
-            // B. 繪製障礙物 (樹木/岩石)
-            obstacles.forEach(obs => {
-                if (obs.type === 'tree') {
-                    // 樹陰影
-                    ctx.fillStyle = 'rgba(0,0,0,0.2)';
-                    ctx.beginPath();
-                    ctx.arc(obs.x, obs.y + 10, obs.width/2, 0, Math.PI * 2);
-                    ctx.fill();
-                    // 樹幹與樹冠
-                    ctx.fillStyle = '#2d5a27';
-                    ctx.fillRect(obs.x - obs.width/2, obs.y - obs.height/2, obs.width, obs.height);
-                    ctx.fillStyle = '#38761d';
-                    ctx.fillRect(obs.x - obs.width/2 + 5, obs.y - obs.height/2 + 5, obs.width - 10, obs.height - 10);
-                } else {
-                    // 岩石
-                    ctx.fillStyle = '#777777';
-                    ctx.fillRect(obs.x - obs.width/2, obs.y - obs.height/2, obs.width, obs.height);
-                    ctx.fillStyle = '#999999';
-                    ctx.fillRect(obs.x - obs.width/2 + 4, obs.y - obs.height/2 + 4, obs.width - 8, obs.height - 8);
-                }
-            });
-
-            // C. 繪製怪物
-            monsters.forEach(m => {
-                ctx.fillStyle = m.color;
-                ctx.fillRect(m.x - m.width/2, m.y - m.height/2, m.width, m.height);
-                // 怪物眼睛 (Minecraft 苦力怕風格臉孔)
-                ctx.fillStyle = '#000';
-                ctx.fillRect(m.x - 10, m.y - 8, 6, 6);
-                ctx.fillRect(m.x + 4, m.y - 8, 6, 6);
-                ctx.fillRect(m.x - 4, m.y, 8, 10);
-
-                // 怪物血條
-                ctx.fillStyle = '#333';
-                ctx.fillRect(m.x - 20, m.y - 25, 40, 6);
-                ctx.fillStyle = '#ff4444';
-                ctx.fillRect(m.x - 20, m.y - 25, (m.hp / m.maxHp) * 40, 6);
-            });
-
-            // D. 繪製投射物 (箭矢)
-            ctx.fillStyle = '#fff';
-            projectiles.forEach(p => {
-                ctx.beginPath();
-                ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
-                ctx.fill();
-            });
-
-            // E. 繪製玩家
-            if (!player.isDead) {
-                // 玩家本體 (史蒂夫風格)
-                ctx.fillStyle = '#00aaff';
-                ctx.fillRect(player.x - player.width/2, player.y - player.height/2, player.width, player.height);
-
-                // 瞄準角度 calculation
-                const aimAngle = Math.atan2(mouse.worldY - player.y, mouse.worldX - player.x);
-
-                // 武器繪製
-                ctx.save();
-                ctx.translate(player.x, player.y);
-                if (player.activeWeapon === 'sword') {
-                    // 刀：繪製揮舞動作或握持動作
-                    const swingAngle = player.isSwinging ? player.swordSwingAngle : aimAngle;
-                    ctx.rotate(swingAngle);
-                    ctx.fillStyle = '#ddd'; // 劍身
-                    ctx.fillRect(15, -3, 30, 6);
-                    ctx.fillStyle = '#8b4513'; // 劍柄
-                    ctx.fillRect(10, -5, 5, 10);
-
-                    // 刀揮砍光軌特效
-                    if (player.isSwinging) {
-                        ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
-                        ctx.beginPath();
-                        ctx.arc(0, 0, 50, -Math.PI/4, Math.PI/4);
-                        ctx.lineTo(0,0);
-                        ctx.fill();
-                    }
-                } else if (player.activeWeapon === 'bow') {
-                    // 弓箭
-                    ctx.rotate(aimAngle);
-                    ctx.strokeStyle = '#8b4513';
-                    ctx.lineWidth = 4;
-                    ctx.beginPath();
-                    ctx.arc(15, 0, 15, -Math.PI/2, Math.PI/2);
-                    ctx.stroke();
-                }
-                ctx.restore();
-            }
-
-            // F. 粒子效果
-            particles.forEach(pt => {
-                ctx.fillStyle = pt.color;
-                ctx.fillRect(pt.x, pt.y, 4, 4);
-            });
-
-            ctx.restore();
+            renderer.render(scene, camera);
         }
 
         // 重新開始遊戲
         function resetGame() {
             player.hp = 100;
             player.score = 0;
-            player.x = MAP_SIZE / 2;
-            player.y = MAP_SIZE / 2;
+            player.position.set(0, 1.6, 0);
             player.isDead = false;
+
+            monsters.forEach(m => scene.remove(m.mesh));
             monsters.length = 0;
-            projectiles.length = 0;
 
             document.getElementById('hp-text').innerText = 100;
             document.getElementById('hp-bar').style.width = '100%';
             document.getElementById('score-text').innerText = 0;
             document.getElementById('game-over').style.display = 'none';
 
-            generateWorld();
+            document.body.requestPointerLock();
         }
 
-        // 遊戲主循環 (極致 60 FPS)
-        function gameLoop() {
-            update();
-            render();
-            requestAnimationFrame(gameLoop);
-        }
+        // 視窗縮放自動調整
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
 
-        // 初始化遊戲
-        generateWorld();
-        gameLoop();
+        animate();
     </script>
 </body>
 </html>

@@ -2,12 +2,12 @@
 <html lang="zh-Hant">
 <head>
     <meta charset="UTF-8">
-    <title>CYBER ARCADE - 3D 霓虹 RPG</title>
+    <title>CYBER ARCADE - 方塊塔防</title>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
         
         body {
-            background-color: #030310;
+            background-color: #050505;
             color: #00ffcc;
             font-family: 'Press Start 2P', monospace;
             text-align: center;
@@ -17,22 +17,15 @@
         #ui-layer {
             position: absolute;
             top: 10px;
-            left: 50%;
-            transform: translateX(-50%);
-            width: 90%;
-            max-width: 700px;
-            background: rgba(15, 12, 41, 0.85);
-            border: 3px solid #ff007f;
+            left: 10px;
+            background: rgba(15, 12, 41, 0.9);
+            border: 3px solid #ffff00;
             padding: 15px;
-            box-shadow: 0 0 20px #ff007f;
+            box-shadow: 0 0 15px #ffff00;
             pointer-events: none;
+            text-align: left;
         }
-        .hud-row {
-            display: flex;
-            justify-content: space-around;
-            font-size: 10px;
-            margin-bottom: 8px;
-        }
+        .hud-text { font-size: 12px; margin-bottom: 10px; line-height: 1.5; }
         .controls {
             position: absolute;
             bottom: 20px;
@@ -43,100 +36,265 @@
             pointer-events: auto;
         }
         .arcade-btn {
-            background-color: #ff007f;
-            color: #fff;
+            background-color: #00ffcc;
+            color: #000;
             border: none;
-            padding: 12px 20px;
+            padding: 15px 30px;
             font-family: 'Press Start 2P', monospace;
-            font-size: 10px;
+            font-size: 14px;
             cursor: pointer;
-            box-shadow: 0 4px 0 #99004c;
+            box-shadow: 0 6px 0 #008866;
             transition: 0.1s;
         }
         .arcade-btn:active {
-            transform: translateY(4px);
-            box-shadow: 0 0 0 #99004c;
+            transform: translateY(6px);
+            box-shadow: 0 0 0 #008866;
         }
-        .btn-skill { background-color: #00ffcc; color: #000; box-shadow: 0 4px 0 #008866; }
-        .btn-skill:active { box-shadow: 0 0 0 #008866; }
+        .btn-build { background-color: #ffff00; box-shadow: 0 6px 0 #b3b300; }
+        .btn-build:active { box-shadow: 0 0 0 #b3b300; }
     </style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 </head>
 <body>
 
     <div id="ui-layer">
-        <div class="hud-row">
-            <div>玩家 HP: <span id="playerHp">100</span></div>
-            <div>霓虹幣: <span id="coins">50</span></div>
-            <div>當前關卡: <span id="stage">1</span></div>
-        </div>
-        <div style="font-size: 9px; color: #ffff00;" id="battleLog">進入 3D 霓虹深淵，點擊按鈕攻擊怪物！</div>
+        <div class="hud-text">生命: <span id="life" style="color: #ff007f;">20</span></div>
+        <div class="hud-text">霓虹幣: <span id="coins">100</span></div>
+        <div class="hud-text">波次: <span id="wave">1</span></div>
+        <div class="hud-text" id="gameStatus" style="font-size: 10px; color: #fff;">準備開始...</div>
     </div>
 
     <div class="controls">
-        <button class="arcade-btn btn-skill" onclick="playerAttack(25)">⚡ 霓虹雷擊 (普攻)</button>
-        <button class="arcade-btn" onclick="playerAttack(50)" style="background-color: #ffff00; color: #000; box-shadow: 0 4px 0 #b3b300;">🔥 爆裂劍技 (大招)</button>
-        <button class="arcade-btn" onclick="gachaPull()">🎰 抽卡轉蛋 (20幣)</button>
+        <button class="arcade-btn btn-build" onclick="buildTower()">建造電磁塔 (50幣)</button>
+        <button class="arcade-btn" onclick="startNextWave()">下一波方塊</button>
     </div>
 
     <script>
-        // --- 3D 場景初始化 (Three.js) ---
+        // --- 3D 場景初始化 ---
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x050510);
-        scene.fog = new THREE.FogExp2(0x050510, 0.05);
+        scene.background = new THREE.Color(0x030303);
+        scene.fog = new THREE.FogExp2(0x030303, 0.02);
 
-        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
-        camera.position.set(0, 5, 12);
+        const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(0, 15, 20);
         camera.lookAt(0, 0, 0);
 
         const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true; // 開啟陰影
         document.body.appendChild(renderer.domElement);
 
-        // 燈光設定
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+        // 燈光
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.3);
         scene.add(ambientLight);
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        dirLight.position.set(10, 20, 10);
+        dirLight.castShadow = true;
+        scene.add(dirLight);
 
-        const pointLight = new THREE.PointLight(0xff007f, 2, 50);
-        pointLight.position.set(0, 5, 5);
-        scene.add(pointLight);
-
-        const blueLight = new THREE.PointLight(0x00ffcc, 2, 50);
-        blueLight.position.set(0, -5, -5);
-        scene.add(blueLight);
-
-        // 建立 3D 地板網格 (賽博朋克風)
-        const gridHelper = new THREE.GridHelper(50, 50, 0xff007f, 0x00ffcc);
-        gridHelper.position.y = -2;
+        // 地圖網格
+        const gridHelper = new THREE.GridHelper(40, 20, 0x444444, 0x222222);
         scene.add(gridHelper);
 
-        // 建立 3D 怪物 (賽博方塊怪獸)
-        const monsterGeo = new THREE.BoxGeometry(2.5, 2.5, 2.5);
-        const monsterMat = new THREE.MeshStandardMaterial({ 
-            color: 0xff007f, 
-            roughness: 0.3, 
-            metalness: 0.8,
-            emissive: 0x550022 
-        });
-        const monsterMesh = new THREE.Mesh(monsterGeo, monsterMat);
-        monsterMesh.position.set(0, 0, -2);
-        scene.add(monsterMesh);
+        // --- 塔防遊戲邏輯變數 ---
+        let life = 20;
+        let coins = 100;
+        let wave = 1;
+        let towers = [];
+        let enemies = [];
+        let isWaveInProgress = false;
+        
+        // 定義敵人路徑 (簡單的直線從遠到近)
+        const pathPoints = [
+            new THREE.Vector3(0, 0, -20),
+            new THREE.Vector3(0, 0, 20)
+        ];
 
-        // 動態變數
-        let playerHp = 100;
-        let coins = 50;
-        let stage = 1;
-        let monsterHp = 80;
-        let monsterMaxHp = 80;
+        // --- 3D 物件工廠 ---
 
-        // 3D 動畫循環
+        // 1. 建立方塊敵人 (你喜歡的那個！)
+        function createEnemy() {
+            const geo = new THREE.BoxGeometry(1.5, 1.5, 1.5);
+            const mat = new THREE.MeshStandardMaterial({ 
+                color: 0xff007f, 
+                emissive: 0x550022,
+                roughness: 0.2
+            });
+            const mesh = new THREE.Mesh(geo, mat);
+            mesh.castShadow = true;
+            mesh.position.copy(pathPoints[0]);
+            
+            const enemyObj = {
+                mesh: mesh,
+                hp: 50 + wave * 20, // 隨波次變強
+                maxHp: 50 + wave * 20,
+                pathIndex: 0,
+                speed: 0.1 + (wave * 0.01),
+                uid: Date.now()
+            };
+            
+            scene.add(mesh);
+            enemies.push(enemyObj);
+        }
+
+        // 2. 建立防禦塔 (圓柱體+小球)
+        function createTowerMesh(x, z) {
+            const towerGroup = new THREE.Group();
+            
+            // 底座
+            const baseGeo = new THREE.CylinderGeometry(1, 1.2, 1, 16);
+            const baseMat = new THREE.MeshStandardMaterial({ color: 0x00cc99, metalness: 0.7 });
+            const base = new THREE.Mesh(baseGeo, baseMat);
+            base.position.y = 0.5;
+            base.castShadow = true;
+            towerGroup.add(base);
+
+            // 砲塔
+            const headGeo = new THREE.SphereGeometry(0.7, 16, 16);
+            const headMat = new THREE.MeshStandardMaterial({ color: 0xffff00, emissive: 0x999900 });
+            const head = new THREE.Mesh(headGeo, headMat);
+            head.position.y = 1.8;
+            head.castShadow = true;
+            towerGroup.add(head);
+
+            towerGroup.position.set(x, 0, z);
+            scene.add(towerGroup);
+            
+            return {
+                group: towerGroup,
+                head: head,
+                range: 8,
+                damage: 10,
+                cooldown: 0,
+                target: null
+            };
+        }
+
+        // --- 遊戲互動函數 ---
+
+        // 建造塔 (點擊按鈕觸發)
+        function buildTower() {
+            if (coins < 50) {
+                document.getElementById("gameStatus").innerText = "⚠️ 霓虹幣不足！";
+                return;
+            }
+            coins -= 50;
+            updateHUD();
+            
+            // 隨機位置建造在網格上 (簡化版)
+            const x = Math.floor(Math.random() * 5) * 4 - 8; // -8, -4, 0, 4, 8
+            const z = Math.floor(Math.random() * 5) * 4 - 8; 
+            
+            const tower = createTowerMesh(x, z);
+            towers.push(tower);
+            document.getElementById("gameStatus").innerText = "✅ 電磁塔建造完成！";
+        }
+
+        // 開始下一波
+        function startNextWave() {
+            if (isWaveInProgress) return;
+            isWaveInProgress = true;
+            wave += 1;
+            document.getElementById("gameStatus").innerText = `⚡ 第 ${wave} 波方塊入侵開始！`;
+            updateHUD();
+            
+            // 生成這一波的敵人 (例如：5個)
+            let enemyCount = 0;
+            const spawnInterval = setInterval(() => {
+                createEnemy();
+                enemyCount++;
+                if (enemyCount >= 5 + wave) {
+                    clearInterval(spawnInterval);
+                }
+            }, 1000);
+        }
+
+        // --- 核心遊戲循環 (動畫+邏輯) ---
         function animate() {
             requestAnimationFrame(animate);
 
-            // 讓怪物在 3D 空間中自轉與浮動
-            monsterMesh.rotation.x += 0.01;
-            monsterMesh.rotation.y += 0.02;
-            monsterMesh.position.y = Math.sin(Date.now() * 0.003) * 0.5;
+            // --- 1. 敵人移動邏輯 ---
+            const enemiesToRemove = [];
+            enemies.forEach(enemy => {
+                const targetPoint = pathPoints[1]; // 終點
+                const direction = new THREE.Vector3().subVectors(targetPoint, enemy.mesh.position).normalize();
+                enemy.mesh.position.add(direction.multiplyScalar(enemy.speed));
+                
+                // 敵人旋轉效果 (你喜歡的特性)
+                enemy.mesh.rotation.x += 0.02;
+                enemy.mesh.rotation.y += 0.03;
+
+                // 到達終點判定
+                if (enemy.mesh.position.distanceTo(targetPoint) < 0.5) {
+                    life -= 1;
+                    enemiesToRemove.push(enemy);
+                    updateHUD();
+                }
+            });
+
+            // --- 2. 防禦塔 AI 邏輯 ---
+            towers.forEach(tower => {
+                // 尋找範圍內最近的敵人
+                let nearestEnemy = null;
+                let minDistance = tower.range;
+
+                enemies.forEach(enemy => {
+                    const dist = tower.group.position.distanceTo(enemy.mesh.position);
+                    if (dist < minDistance) {
+                        nearestEnemy = enemy;
+                        minDistance = dist;
+                    }
+                });
+
+                // 攻擊邏輯
+                tower.target = nearestEnemy;
+                if (tower.target && tower.cooldown <= 0) {
+                    // 瞄準敵人
+                    tower.head.lookAt(tower.target.mesh.position);
+                    
+                    // 造成傷害
+                    tower.target.hp -= tower.damage;
+                    
+                    // 視覺回饋：發射光束 (簡單用紅色發光表示)
+                    const originalEmit = tower.target.mesh.material.emissive.getHex();
+                    tower.target.mesh.material.emissive.setHex(0xffffff); // 擊中變白
+                    setTimeout(() => {
+                        if(tower.target) tower.target.mesh.material.emissive.setHex(originalEmit);
+                    }, 50);
+
+                    // 重置攻擊冷卻
+                    tower.cooldown = 20; // 幀數
+                } else if (tower.cooldown > 0) {
+                    tower.cooldown -= 1;
+                }
+            });
+
+            // --- 3. 清理陣列 ---
+            // 移除死掉的敵人
+            enemies.filter(e => e.hp <= 0).forEach(deadEnemy => {
+                coins += 25; // 擊殺獎勵
+                updateHUD();
+                enemiesToRemove.push(deadEnemy);
+            });
+            
+            // 執行實際刪除
+            enemiesToRemove.forEach(enemyToRemove => {
+                scene.remove(enemyToRemove.mesh);
+                const index = enemies.indexOf(enemyToRemove);
+                if (index > -1) {
+                    enemies.splice(index, 1);
+                }
+            });
+
+            // 檢查遊戲結束
+            if (life <= 0 && isWaveInProgress) {
+                isWaveInProgress = false;
+                document.getElementById("gameStatus").innerText = "💀 遊戲結束！方塊佔領了深淵。";
+            } else if (enemies.length === 0 && isWaveInProgress) {
+                // 所有敵人都清空了，波次結束
+                isWaveInProgress = false;
+                document.getElementById("gameStatus").innerText = "✅ 本波防守成功！準備迎戰下一波。";
+            }
 
             renderer.render(scene, camera);
         }
@@ -149,55 +307,10 @@
             renderer.setSize(window.innerWidth, window.innerHeight);
         });
 
-        // --- RPG 戰鬥邏輯 ---
-        function playerAttack(damage) {
-            if (playerHp <= 0) return;
-
-            monsterHp -= damage;
-            
-            // 擊中視覺回饋 (怪物閃爍白光)
-            monsterMat.emissive.setHex(0xffffff);
-            setTimeout(() => monsterMat.emissive.setHex(0x550022), 150);
-
-            if (monsterHp <= 0) {
-                coins += 30;
-                stage += 1;
-                document.getElementById("battleLog").innerHTML = `🎉 擊敗 3D 深淵怪獸！獲得 30 霓虹幣，進入第 ${stage} 關！`;
-                
-                // 升級怪物強度
-                monsterMaxHp += 40;
-                monsterHp = monsterMaxHp;
-                // 改變怪物顏色
-                monsterMat.color.setHex(Math.random() * 0xffffff);
-            } else {
-                // 怪物反擊
-                let mDmg = 10 + Math.floor(Math.random() * 15);
-                playerHp -= mDmg;
-                document.getElementById("battleLog").innerHTML = `⚔️ 你造成了 ${damage} 傷害！怪物反擊造成 ${mDmg} 傷害！`;
-            }
-
-            if (playerHp <= 0) {
-                playerHp = 0;
-                document.getElementById("battleLog").innerHTML = `💀 挑戰失敗！請重新投幣再戰。`;
-            }
-
-            updateHUD();
-        }
-
-        function gachaPull() {
-            if (coins < 20) {
-                document.getElementById("battleLog").innerHTML = `⚠️ 霓虹幣不足！請打怪賺取硬幣。`;
-                return;
-            }
-            coins -= 20;
-            document.getElementById("battleLog").innerHTML = `🎰 街機轉蛋成功！獲得【SSR 霓虹光刃】卡牌！`;
-            updateHUD();
-        }
-
         function updateHUD() {
-            document.getElementById("playerHp").innerText = playerHp;
+            document.getElementById("life").innerText = life;
             document.getElementById("coins").innerText = coins;
-            document.getElementById("stage").innerText = stage;
+            document.getElementById("wave").innerText = wave;
         }
     </script>
 </body>

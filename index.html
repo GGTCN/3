@@ -2,200 +2,203 @@
 <html lang="zh-Hant">
 <head>
     <meta charset="UTF-8">
-    <title>CYBER ARCADE - 霓虹卡牌 RPG</title>
+    <title>CYBER ARCADE - 3D 霓虹 RPG</title>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
         
         body {
-            background-color: #05051a;
+            background-color: #030310;
             color: #00ffcc;
             font-family: 'Press Start 2P', monospace;
             text-align: center;
             margin: 0;
-            padding: 20px;
+            overflow: hidden;
         }
-        h1 {
-            color: #ff007f;
-            text-shadow: 2px 2px #00ffcc;
-            font-size: 20px;
+        #ui-layer {
+            position: absolute;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 90%;
+            max-width: 700px;
+            background: rgba(15, 12, 41, 0.85);
+            border: 3px solid #ff007f;
+            padding: 15px;
+            box-shadow: 0 0 20px #ff007f;
+            pointer-events: none;
         }
-        .cabinet {
-            border: 4px solid #ff007f;
-            background: #0f0c29;
-            max-width: 650px;
-            margin: 20px auto;
-            padding: 20px;
-            box-shadow: 0 0 25px #ff007f;
-        }
-        .status-panel {
+        .hud-row {
             display: flex;
             justify-content: space-around;
-            margin-bottom: 15px;
             font-size: 10px;
-            border-bottom: 2px dashed #00ffcc;
-            padding-bottom: 10px;
+            margin-bottom: 8px;
         }
-        .monster-area {
-            border: 2px solid #00ffcc;
-            padding: 15px;
-            margin-bottom: 15px;
-            background: #1a0033;
-        }
-        .card-container {
+        .controls {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
             display: flex;
-            justify-content: center;
-            gap: 10px;
-            margin-top: 15px;
+            gap: 15px;
+            pointer-events: auto;
         }
-        .card {
-            background: #222;
-            border: 2px solid #ffff00;
-            color: #ffff00;
-            padding: 10px;
-            width: 90px;
-            font-size: 8px;
-            cursor: pointer;
-            transition: 0.1s;
-        }
-        .card:hover {
-            transform: translateY(-5px);
-            background: #ffff00;
-            color: #000;
-        }
-        .btn-gacha {
+        .arcade-btn {
             background-color: #ff007f;
             color: #fff;
             border: none;
-            padding: 10px 20px;
+            padding: 12px 20px;
             font-family: 'Press Start 2P', monospace;
             font-size: 10px;
             cursor: pointer;
-            margin-top: 10px;
             box-shadow: 0 4px 0 #99004c;
+            transition: 0.1s;
         }
-        .btn-gacha:active {
+        .arcade-btn:active {
             transform: translateY(4px);
             box-shadow: 0 0 0 #99004c;
         }
-        .log-box {
-            margin-top: 15px;
-            font-size: 9px;
-            height: 40px;
-            color: #00ffcc;
-        }
+        .btn-skill { background-color: #00ffcc; color: #000; box-shadow: 0 4px 0 #008866; }
+        .btn-skill:active { box-shadow: 0 0 0 #008866; }
     </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 </head>
 <body>
 
-    <h1>🕹️ NEON ABYSS: CYBER CARD RPG</h1>
-    <p style="font-size: 10px;">抽卡組牌 ⚡ 擊敗深淵怪物</p>
-
-    <div class="cabinet">
-        <div class="status-panel">
+    <div id="ui-layer">
+        <div class="hud-row">
             <div>玩家 HP: <span id="playerHp">100</span></div>
-            <div>能量: <span id="energy">3</span>/3</div>
             <div>霓虹幣: <span id="coins">50</span></div>
+            <div>當前關卡: <span id="stage">1</span></div>
         </div>
+        <div style="font-size: 9px; color: #ffff00;" id="battleLog">進入 3D 霓虹深淵，點擊按鈕攻擊怪物！</div>
+    </div>
 
-        <div class="monster-area">
-            <h3 id="monsterName" style="color: #ff007f; font-size: 12px;">【怪獸】賽博暴徒</h3>
-            <p>怪物生命值: <span id="monsterHp">50</span> / 50</p>
-        </div>
-
-        <div class="log-box" id="gameLog">戰鬥開始！請選擇卡牌攻擊怪物。</div>
-
-        <p style="font-size: 10px; margin-bottom: 5px;">-- 戰鬥手牌 --</p>
-        <div class="card-container">
-            <div class="card" onclick="useCard('slash')">霓虹斬擊<br><br>傷害: 15<br>耗能: 1</div>
-            <div class="card" onclick="useCard('hack')">駭客病毒<br><br>傷害: 25<br>耗能: 2</div>
-            <div class="card" onclick="useCard('heal')">奈米修復<br><br>回血: 20<br>耗能: 1</div>
-        </div>
-
-        <hr style="border: 1px dashed #ff007f; margin: 20px 0;">
-
-        <button class="btn-gacha" onclick="pullCard()">抽卡轉蛋 (10幣)</button>
+    <div class="controls">
+        <button class="arcade-btn btn-skill" onclick="playerAttack(25)">⚡ 霓虹雷擊 (普攻)</button>
+        <button class="arcade-btn" onclick="playerAttack(50)" style="background-color: #ffff00; color: #000; box-shadow: 0 4px 0 #b3b300;">🔥 爆裂劍技 (大招)</button>
+        <button class="arcade-btn" onclick="gachaPull()">🎰 抽卡轉蛋 (20幣)</button>
     </div>
 
     <script>
+        // --- 3D 場景初始化 (Three.js) ---
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x050510);
+        scene.fog = new THREE.FogExp2(0x050510, 0.05);
+
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(0, 5, 12);
+        camera.lookAt(0, 0, 0);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        // 燈光設定
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+        scene.add(ambientLight);
+
+        const pointLight = new THREE.PointLight(0xff007f, 2, 50);
+        pointLight.position.set(0, 5, 5);
+        scene.add(pointLight);
+
+        const blueLight = new THREE.PointLight(0x00ffcc, 2, 50);
+        blueLight.position.set(0, -5, -5);
+        scene.add(blueLight);
+
+        // 建立 3D 地板網格 (賽博朋克風)
+        const gridHelper = new THREE.GridHelper(50, 50, 0xff007f, 0x00ffcc);
+        gridHelper.position.y = -2;
+        scene.add(gridHelper);
+
+        // 建立 3D 怪物 (賽博方塊怪獸)
+        const monsterGeo = new THREE.BoxGeometry(2.5, 2.5, 2.5);
+        const monsterMat = new THREE.MeshStandardMaterial({ 
+            color: 0xff007f, 
+            roughness: 0.3, 
+            metalness: 0.8,
+            emissive: 0x550022 
+        });
+        const monsterMesh = new THREE.Mesh(monsterGeo, monsterMat);
+        monsterMesh.position.set(0, 0, -2);
+        scene.add(monsterMesh);
+
+        // 動態變數
         let playerHp = 100;
-        let energy = 3;
         let coins = 50;
-        let monsterHp = 50;
-        let monsterMaxHp = 50;
-        let monsters = [
-            { name: "【怪獸】賽博暴徒", hp: 50 },
-            { name: "【怪獸】霓虹蜘蛛", hp: 80 },
-            { name: "【BOSS】深淵主宰", hp: 150 }
-        ];
-        let currentMonsterIndex = 0;
+        let stage = 1;
+        let monsterHp = 80;
+        let monsterMaxHp = 80;
 
-        function updateUI() {
-            document.getElementById("playerHp").innerText = playerHp;
-            document.getElementById("energy").innerText = energy;
-            document.getElementById("coins").innerText = coins;
-            document.getElementById("monsterHp").innerText = monsterHp;
-            document.getElementById("monsterName").innerText = monsters[currentMonsterIndex].name;
+        // 3D 動畫循環
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // 讓怪物在 3D 空間中自轉與浮動
+            monsterMesh.rotation.x += 0.01;
+            monsterMesh.rotation.y += 0.02;
+            monsterMesh.position.y = Math.sin(Date.now() * 0.003) * 0.5;
+
+            renderer.render(scene, camera);
         }
+        animate();
 
-        function useCard(type) {
+        // 視窗縮放適應
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // --- RPG 戰鬥邏輯 ---
+        function playerAttack(damage) {
             if (playerHp <= 0) return;
-            
-            let log = "";
-            if (type === 'slash' && energy >= 1) {
-                energy -= 1;
-                monsterHp -= 15;
-                log = "你使用了【霓虹斬擊】，造成 15 點傷害！";
-            } else if (type === 'hack' && energy >= 2) {
-                energy -= 2;
-                monsterHp -= 25;
-                log = "你使用了【駭客病毒】，造成 25 點重擊！";
-            } else if (type === 'heal' && energy >= 1) {
-                energy -= 1;
-                playerHp = Math.min(100, playerHp + 20);
-                log = "你使用了【奈米修復】，恢復了 20 點生命！";
-            } else {
-                log = "⚠️ 能量不足！";
-                updateUI();
-                document.getElementById("gameLog").innerText = log;
-                return;
-            }
 
-            // 檢查怪物是否死亡
+            monsterHp -= damage;
+            
+            // 擊中視覺回饋 (怪物閃爍白光)
+            monsterMat.emissive.setHex(0xffffff);
+            setTimeout(() => monsterMat.emissive.setHex(0x550022), 150);
+
             if (monsterHp <= 0) {
-                coins += 20;
-                log += `<br>🎉 擊敗 ${monsters[currentMonsterIndex].name}！獲得 20 霓虹幣！`;
-                currentMonsterIndex = (currentMonsterIndex + 1) % monsters.length;
-                monsterMaxHp += 30;
+                coins += 30;
+                stage += 1;
+                document.getElementById("battleLog").innerHTML = `🎉 擊敗 3D 深淵怪獸！獲得 30 霓虹幣，進入第 ${stage} 關！`;
+                
+                // 升級怪物強度
+                monsterMaxHp += 40;
                 monsterHp = monsterMaxHp;
-                monsters[currentMonsterIndex].hp = monsterMaxHp;
+                // 改變怪物顏色
+                monsterMat.color.setHex(Math.random() * 0xffffff);
             } else {
                 // 怪物反擊
-                let monsterDmg = 10 + Math.floor(Math.random() * 10);
-                playerHp -= monsterDmg;
-                log += `<br>💥 怪物反擊，對你造成 ${monsterDmg} 點傷害！`;
-                energy = Math.min(3, energy + 1); // 回復1點能量
+                let mDmg = 10 + Math.floor(Math.random() * 15);
+                playerHp -= mDmg;
+                document.getElementById("battleLog").innerHTML = `⚔️ 你造成了 ${damage} 傷害！怪物反擊造成 ${mDmg} 傷害！`;
             }
 
             if (playerHp <= 0) {
                 playerHp = 0;
-                log = "💀 遊戲結束！你的生命值歸零，請重新投幣。";
+                document.getElementById("battleLog").innerHTML = `💀 挑戰失敗！請重新投幣再戰。`;
             }
 
-            document.getElementById("gameLog").innerText = log;
-            updateUI();
+            updateHUD();
         }
 
-        function pullCard() {
-            if (coins < 10) {
-                document.getElementById("gameLog").innerText = "❌ 霓虹幣不足！請打怪賺取硬幣！";
+        function gachaPull() {
+            if (coins < 20) {
+                document.getElementById("battleLog").innerHTML = `⚠️ 霓虹幣不足！請打怪賺取硬幣。`;
                 return;
             }
-            coins -= 10;
-            coins += 15; // 抽卡隨贈
-            document.getElementById("gameLog").innerText = "🎰 轉蛋成功！獲得稀有賽博裝備卡，額外回饋 15 幣！";
-            updateUI();
+            coins -= 20;
+            document.getElementById("battleLog").innerHTML = `🎰 街機轉蛋成功！獲得【SSR 霓虹光刃】卡牌！`;
+            updateHUD();
+        }
+
+        function updateHUD() {
+            document.getElementById("playerHp").innerText = playerHp;
+            document.getElementById("coins").innerText = coins;
+            document.getElementById("stage").innerText = stage;
         }
     </script>
-
 </body>
 </html>

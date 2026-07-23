@@ -1,326 +1,217 @@
 <!DOCTYPE html>
-<html lang="zh-Hant">
+<html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>CYBER ARCADE - 像素方塊刀劍 RPG</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D 麥塊風格 FPS 槍戰系統</title>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
-        
         body {
-            background-color: #1a1a2e;
-            color: #00ffcc;
-            font-family: 'Press Start 2P', monospace;
-            text-align: center;
             margin: 0;
             overflow: hidden;
+            font-family: Arial, sans-serif;
             user-select: none;
-        }
-        #ui-layer {
-            position: absolute;
-            top: 15px;
-            left: 50%;
-            transform: translateX(-50%);
-            width: 90%;
-            max-width: 800px;
-            background: rgba(15, 12, 41, 0.95);
-            border: 3px solid #ff007f;
-            padding: 12px 20px;
-            box-shadow: 0 0 20px #ff007f;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            pointer-events: none;
-            font-size: 11px;
-        }
-        .hud-group {
-            display: flex;
-            gap: 15px;
-        }
-        .blade-panel {
-            position: absolute;
-            bottom: 25px;
-            left: 50%;
-            transform: translateX(-50%);
-            display: flex;
-            gap: 12px;
-            pointer-events: auto;
-            background: rgba(10, 5, 25, 0.9);
-            padding: 10px 15px;
-            border: 2px solid #ffff00;
-            box-shadow: 0 0 15px #ffff00;
-        }
-        .blade-btn {
-            background-color: #222;
-            color: #ffff00;
-            border: 2px solid #ffff00;
-            padding: 10px 15px;
-            font-family: 'Press Start 2P', monospace;
-            font-size: 9px;
-            cursor: pointer;
-            transition: 0.1s;
-        }
-        .blade-btn.active {
-            background-color: #ffff00;
-            color: #000;
-            box-shadow: 0 0 10px #ffff00;
-        }
-        .blade-btn:hover {
-            background-color: #ff007f;
-            border-color: #ff007f;
-            color: #fff;
         }
         #instructions {
             position: absolute;
-            bottom: 90px;
+            top: 50%;
             left: 50%;
-            transform: translateX(-50%);
-            font-size: 8px;
-            color: #00ffcc;
-            background: rgba(0,0,0,0.7);
-            padding: 6px 12px;
-            border-radius: 4px;
+            transform: translate(-50%, -50%);
+            color: white;
+            background: rgba(0,0,0,0.8);
+            padding: 20px 40px;
+            border-radius: 10px;
+            text-align: center;
+            cursor: pointer;
+            z-index: 10;
+        }
+        /* 準心 (Crosshair) */
+        #crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 10px;
+            height: 10px;
+            transform: translate(-50%, -50%);
             pointer-events: none;
         }
+        #crosshair::before, #crosshair::after {
+            content: '';
+            position: absolute;
+            background: rgba(255, 255, 255, 0.8);
+        }
+        #crosshair::before { top: 4px; left: 0; width: 10px; height: 2px; }
+        #crosshair::after { top: 0; left: 4px; width: 2px; height: 10px; }
     </style>
-    <!-- 引入 Three.js 3D 引擎 -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 </head>
 <body>
 
-    <div id="ui-layer">
-        <div class="hud-group">
-            <div>血量: <span id="playerHp" style="color:#ff007f;">100</span></div>
-            <div>擊殺: <span id="killCount">0</span></div>
-            <div>方塊寶石: <span id="gems" style="color:#ffff00;">0</span></div>
-        </div>
-        <div id="battleLog" style="font-size: 9px; color: #ffff00;">使用 W A S D 移動，點擊方塊怪物揮刀砍殺！</div>
+    <div id="instructions">
+        <h1>點擊螢幕開始遊戲</h1>
+        <p>W, A, S, D = 移動 | 空格 = 跳躍</p>
+        <p>滑鼠左鍵 = 射擊 | 滑鼠右鍵 = 瞄準 (ADS)</p>
     </div>
 
-    <div id="instructions">控制方式：W A S D 移動角色 | 滑鼠點擊方塊怪進行刀劍攻擊 | 下方切換刀具</div>
+    <div id="crosshair"></div>
 
-    <div class="blade-panel">
-        <button class="blade-btn active" id="bBtn0" onclick="switchBlade(0)">⚔️ 像素方塊太刀 (平衡)</button>
-        <button class="blade-btn" id="bBtn1" onclick="switchBlade(1)">⚡ 電磁光刃 (高傷)</button>
-        <button class="blade-btn" id="bBtn2" onclick="switchBlade(2)">🔥 烈焰巨劍 (範圍)</button>
-    </div>
+    <!-- 導入 Three.js 與 PointerLockControls -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/PointerLockControls.js"></script>
 
     <script>
-        // --- 1. 遊戲核心狀態 ---
-        let playerHp = 100;
-        let killCount = 0;
-        let gems = 0;
-        let currentBlade = 0; // 0: 太刀, 1: 光刃, 2: 巨劍
-        
-        const bladesData = [
-            { name: "方塊太刀", damage: 30, range: 4.0, color: 0x00ffcc },
-            { name: "電磁光刃", damage: 45, range: 4.5, color: 0x00ffff },
-            { name: "烈焰巨劍", damage: 70, range: 3.5, color: 0xff007f }
-        ];
-
-        const keys = { w: false, a: false, s: false, d: false };
-
-        // --- 2. Three.js 場景初始化 ---
+        // 1. 基本場景與相機設定
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x111122);
-        scene.fog = new THREE.FogExp2(0x111122, 0.04);
+        scene.background = new THREE.Color(0x87ceeb); // 天空藍
+        scene.fog = new THREE.Fog(0x87ceeb, 10, 60);
 
-        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
-        camera.position.set(0, 10, 10);
-        camera.lookAt(0, 0, 0);
-
-        const renderer = new THREE.WebGLRenderer({ antialias: false }); // 關閉反鋸齒以保留完美像素風
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.shadowMap.enabled = true;
         document.body.appendChild(renderer.domElement);
 
-        // 燈光
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+        // 光照設定
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
         scene.add(ambientLight);
 
         const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-        dirLight.position.set(10, 20, 10);
+        dirLight.position.set(20, 40, 20);
+        dirLight.castShadow = true;
         scene.add(dirLight);
 
-        // 方塊世界地面 (Voxel Grid 地板)
-        const gridHelper = new THREE.GridHelper(40, 20, 0xff007f, 0x444466);
-        gridHelper.position.y = -1;
-        scene.add(gridHelper);
+        // 2. 建立麥塊風格的地形 (Voxel / 方塊)
+        const boxGeometry = new THREE.BoxGeometry(1, 1, 1);
+        const grassMaterial = new THREE.MeshLambertMaterial({ color: 0x557a2b });
+        const targetMaterial = new THREE.MeshLambertMaterial({ color: 0xd9534f });
 
-        // --- 3. 建立麥塊風格角色與方塊怪獸 ---
+        // 地板 (由方塊組成的地面)
+        for (let x = -20; x <= 20; x++) {
+            for (let z = -20; z <= 20; z++) {
+                const block = new THREE.Mesh(boxGeometry, grassMaterial);
+                block.position.set(x, -0.5, z);
+                block.receiveShadow = true;
+                scene.add(block);
+            }
+        }
 
-        // 玩家 (方塊人造型)
-        const playerGroup = new THREE.Group();
-        const bodyGeo = new THREE.BoxGeometry(1, 1.4, 0.8);
-        const bodyMat = new THREE.MeshStandardMaterial({ color: 0x3366ff, roughness: 0.8 });
-        const body = new THREE.Mesh(bodyGeo, bodyMat);
-        body.position.y = 0.7;
-        playerGroup.add(body);
+        // 建立幾個靶子方塊 (Target Boxes)
+        const targets = [];
+        for (let i = 0; i < 5; i++) {
+            const target = new THREE.Mesh(boxGeometry, targetMaterial);
+            target.position.set((Math.random() - 0.5) * 20, 1.5, -5 - Math.random() * 10);
+            target.castShadow = true;
+            scene.add(target);
+            targets.push(target);
+        }
 
-        // 玩家頭部
-        const headGeo = new THREE.BoxGeometry(0.9, 0.9, 0.9);
-        const headMat = new THREE.MeshStandardMaterial({ color: 0xffcc99, roughness: 0.8 });
-        const head = new THREE.Mesh(headGeo, headMat);
-        head.position.y = 1.6;
-        playerGroup.add(head);
+        // 3. 第一人稱控制器與移動邏輯
+        const controls = new THREE.PointerLockControls(camera, document.body);
+        const instructions = document.getElementById('instructions');
 
-        playerGroup.position.set(0, 0, 3);
-        scene.add(playerGroup);
+        instructions.addEventListener('click', () => controls.lock());
+        controls.addEventListener('lock', () => instructions.style.display = 'none');
+        controls.addEventListener('unlock', () => instructions.style.display = '');
 
-        // 方塊怪獸群 (像素殭屍 / 方塊怪)
-        let monsters = [];
+        scene.add(controls.getObject());
+
+        const moveState = { forward: false, backward: false, left: false, right: false };
+        const velocity = new THREE.Vector3();
+        const direction = new THREE.Vector3();
+
+        document.addEventListener('keydown', (e) => {
+            if (e.code === 'KeyW') moveState.forward = true;
+            if (e.code === 'KeyS') moveState.backward = true;
+            if (e.code === 'KeyA') moveState.left = true;
+            if (e.code === 'KeyD') moveState.right = true;
+        });
+
+        document.addEventListener('keyup', (e) => {
+            if (e.code === 'KeyW') moveState.forward = false;
+            if (e.code === 'KeyS') moveState.backward = false;
+            if (e.code === 'KeyA') moveState.left = false;
+            if (e.code === 'KeyD') moveState.right = false;
+        });
+
+        // 4. 專業槍戰核心：開鏡 (ADS) 與射擊 (Raycasting + 後座力)
+        let isAiming = false;
         const raycaster = new THREE.Raycaster();
-        const mouse = new THREE.Vector2();
 
-        function spawnVoxelMonster() {
-            // 方塊怪獸本體 (由方塊堆疊)
-            const monsterGroup = new THREE.Group();
-            
-            const mBodyGeo = new THREE.BoxGeometry(1.2, 1.5, 1.2);
-            const mColor = Math.random() > 0.5 ? 0x00cc44 : 0xaa00aa; // 綠色方塊怪或紫色方塊怪
-            const mMat = new THREE.MeshStandardMaterial({ color: mColor, roughness: 0.7 });
-            const mBody = new THREE.Mesh(mBodyGeo, mMat);
-            mBody.position.y = 0.75;
-            monsterGroup.add(mBody);
+        // 滑鼠監聽
+        document.addEventListener('mousedown', (e) => {
+            if (!controls.isLocked) return;
 
-            const mHeadGeo = new THREE.BoxGeometry(1, 1, 1);
-            const mHead = new THREE.Mesh(mHeadGeo, mMat);
-            mHead.position.y = 1.7;
-            monsterGroup.add(mHead);
-
-            // 隨機生成在前方
-            const rx = (Math.random() - 0.5) * 14;
-            const rz = -Math.random() * 12 - 2;
-            monsterGroup.position.set(rx, 0, rz);
-            scene.add(monsterGroup);
-
-            monsters.push({
-                group: monsterGroup,
-                mesh: mBody,
-                hp: 60,
-                maxHp: 60,
-                speed: 0.025 + Math.random() * 0.015
-            });
-        }
-
-        // 初始化生成 4 隻方塊怪
-        for (let i = 0; i < 4; i++) {
-            spawnVoxelMonster();
-        }
-
-        // --- 4. 鍵盤與滑鼠互動事件 ---
-        window.addEventListener('keydown', (e) => {
-            if (e.key === 'w' || e.key === 'W') keys.w = true;
-            if (e.key === 'a' || e.key === 'A') keys.a = true;
-            if (e.key === 's' || e.key === 'S') keys.s = true;
-            if (e.key === 'd' || e.key === 'D') keys.d = true;
-        });
-
-        window.addEventListener('keyup', (e) => {
-            if (e.key === 'w' || e.key === 'W') keys.w = false;
-            if (e.key === 'a' || e.key === 'A') keys.a = false;
-            if (e.key === 's' || e.key === 'S') keys.s = false;
-            if (e.key === 'd' || e.key === 'D') keys.d = false;
-        });
-
-        // 點擊揮刀砍怪
-        window.addEventListener('click', (e) => {
-            mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
-            mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
-            raycaster.setFromCamera(mouse, camera);
-
-            // 收集所有怪獸的身體網格進行點擊判定
-            const monsterMeshes = monsters.map(m => m.mesh);
-            const intersects = raycaster.intersectObjects(monsterMeshes);
-
-            if (intersects.length > 0) {
-                const hitMesh = intersects[0].object;
-                const targetMonster = monsters.find(m => m.mesh === hitMesh);
-
-                if (targetMonster) {
-                    const dist = playerGroup.position.distanceTo(targetMonster.group.position);
-                    const blade = bladesData[currentBlade];
-
-                    if (dist <= blade.range) {
-                        // 砍擊命中！
-                        targetMonster.hp -= blade.damage;
-                        
-                        // 砍擊視覺回饋 (怪獸閃爍白色)
-                        targetMonster.mesh.material.color.setHex(0xffffff);
-                        setTimeout(() => {
-                            targetMonster.mesh.material.color.setHex(0x00cc44);
-                        }, 120);
-
-                        document.getElementById("battleLog").innerHTML = `🗡️ 使用【${blade.name}】狠狠砍擊方塊怪，造成 ${blade.damage} 傷害！`;
-
-                        // 檢查怪獸是否被擊殺
-                        if (targetMonster.hp <= 0) {
-                            scene.remove(targetMonster.group);
-                            monsters = monsters.filter(m => m !== targetMonster);
-                            killCount++;
-                            gems += 15;
-                            document.getElementById("battleLog").innerHTML = `🎉 成功斬殺方塊怪獸！獲得 15 方塊寶石！`;
-                            updateHUD();
-
-                            // 補充新怪獸
-                            setTimeout(spawnVoxelMonster, 1200);
-                        }
-                    } else {
-                        document.getElementById("battleLog").innerHTML = `⚠️ 距離太遠！請用 W A S D 走近方塊怪再揮刀！`;
-                    }
-                }
+            if (e.button === 0) {
+                shoot(); // 左鍵射擊
+            } else if (e.button === 2) {
+                isAiming = true; // 右鍵開鏡
             }
         });
 
-        function switchBlade(index) {
-            currentBlade = index;
-            document.querySelectorAll('.blade-btn').forEach((btn, idx) => {
-                btn.classList.toggle('active', idx === index);
-            });
-            document.getElementById("battleLog").innerHTML = `⚔️ 已切換武器：【${bladesData[index].name}】(傷害: ${bladesData[index].damage})`;
+        document.addEventListener('mouseup', (e) => {
+            if (e.button === 2) isAiming = false;
+        });
+
+        // 防止右鍵選單彈出
+        document.addEventListener('contextmenu', e => e.preventDefault());
+
+        function shoot() {
+            // A. 後座力效果 (Recoil)
+            camera.rotation.x += 0.02;
+
+            // B. 彈道 Raycast 檢測
+            raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+            const intersects = raycaster.intersectObjects(targets);
+
+            if (intersects.length > 0) {
+                const hitObj = intersects[0].object;
+                // 擊中效果：改變顏色並往後倒
+                hitObj.material.color.setHex(0xffffff);
+                setTimeout(() => hitObj.material.color.setHex(0xd9534f), 100);
+                hitObj.position.z -= 0.2;
+            }
         }
 
-        // --- 5. 遊戲主循環 ---
+        // 5. 遊戲主循環 (Main Loop)
+        let prevTime = performance.now();
+
         function animate() {
             requestAnimationFrame(animate);
 
-            // 玩家移動 (W A S D)
-            const speed = 0.07;
-            if (keys.w && playerGroup.position.z > -8) playerGroup.position.z -= speed;
-            if (keys.s && playerGroup.position.z < 8) playerGroup.position.z += speed;
-            if (keys.a && playerGroup.position.x > -10) playerGroup.position.x -= speed;
-            if (keys.d && playerGroup.position.x < 10) playerGroup.position.x += speed;
+            const time = performance.now();
+            const delta = (time - prevTime) / 1000;
 
-            // 攝影機平滑跟隨玩家
-            camera.position.x += (playerGroup.position.x - camera.position.x) * 0.05;
-            camera.lookAt(playerGroup.position.x, 0, playerGroup.position.z - 2);
+            if (controls.isLocked) {
+                // 移動衰減
+                velocity.x -= velocity.x * 10.0 * delta;
+                velocity.z -= velocity.z * 10.0 * delta;
 
-            // 方塊怪獸緩慢朝玩家移動
-            monsters.forEach(m => {
-                const dir = new THREE.Vector3().subVectors(playerGroup.position, m.group.position);
-                dir.y = 0;
-                dir.normalize();
-                m.group.position.add(dir.multiplyScalar(m.speed));
+                direction.z = Number(moveState.forward) - Number(moveState.backward);
+                direction.x = Number(moveState.right) - Number(moveState.left);
+                direction.normalize();
 
-                // 方塊怪簡單的上下浮動步態
-                m.group.position.y = Math.sin(Date.now() * 0.01 + m.group.position.x) * 0.15;
-            });
+                if (moveState.forward || moveState.backward) velocity.z -= direction.z * 100.0 * delta;
+                if (moveState.left || moveState.right) velocity.x -= direction.x * 100.0 * delta;
 
+                controls.moveRight(-velocity.x * delta);
+                controls.moveForward(-velocity.z * delta);
+
+                // 平滑開鏡 (ADS FOV 縮放)
+                const targetFOV = isAiming ? 45 : 75;
+                camera.fov += (targetFOV - camera.fov) * 0.1;
+                camera.updateProjectionMatrix();
+            }
+
+            prevTime = time;
             renderer.render(scene, camera);
         }
+
         animate();
 
-        // 視窗自適應
+        // 視窗大小自適應
         window.addEventListener('resize', () => {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
         });
-
-        function updateHUD() {
-            document.getElementById("playerHp").innerText = playerHp;
-            document.getElementById("killCount").innerText = killCount;
-            document.getElementById("gems").innerText = gems;
-        }
     </script>
 </body>
 </html>

@@ -3,65 +3,96 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>3D 麥塊風格 FPS 槍戰系統</title>
+    <title>3D 麥塊風格專業槍戰 - 完整版</title>
     <style>
-        body {
-            margin: 0;
-            overflow: hidden;
-            font-family: Arial, sans-serif;
-            user-select: none;
+        body { margin: 0; overflow: hidden; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; user-select: none; }
+        #hud {
+            position: absolute; top: 20px; left: 20px; color: #fff;
+            text-shadow: 2px 2px 4px #000; font-size: 20px; z-index: 10; font-weight: bold;
         }
         #instructions {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            color: white;
-            background: rgba(0,0,0,0.8);
-            padding: 20px 40px;
-            border-radius: 10px;
-            text-align: center;
-            cursor: pointer;
-            z-index: 10;
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            color: white; background: rgba(0,0,0,0.85); padding: 30px 50px;
+            border-radius: 12px; text-align: center; cursor: pointer; z-index: 20;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5); border: 2px solid #555;
         }
-        /* 準心 (Crosshair) */
         #crosshair {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            width: 10px;
-            height: 10px;
-            transform: translate(-50%, -50%);
-            pointer-events: none;
+            position: absolute; top: 50%; left: 50%; width: 12px; height: 12px;
+            transform: translate(-50%, -50%); pointer-events: none; z-index: 10;
         }
-        #crosshair::before, #crosshair::after {
-            content: '';
-            position: absolute;
-            background: rgba(255, 255, 255, 0.8);
+        #crosshair::before, #crosshair::after { content: ''; position: absolute; background: rgba(255, 255, 255, 0.9); }
+        #crosshair::before { top: 5px; left: 0; width: 12px; height: 2px; }
+        #crosshair::after { top: 0; left: 5px; width: 2px; height: 12px; }
+        #hitmarker {
+            position: absolute; top: 50%; left: 50%; width: 20px; height: 20px;
+            transform: translate(-50%, -50%) rotate(45deg); pointer-events: none; z-index: 10; opacity: 0;
+            transition: opacity 0.05s;
         }
-        #crosshair::before { top: 4px; left: 0; width: 10px; height: 2px; }
-        #crosshair::after { top: 0; left: 4px; width: 2px; height: 10px; }
+        #hitmarker::before, #hitmarker::after { content: ''; position: absolute; background: #ff3333; }
+        #hitmarker::before { top: 9px; left: 0; width: 20px; height: 2px; }
+        #hitmarker::after { top: 0; left: 9px; width: 2px; height: 20px; }
     </style>
 </head>
 <body>
 
+    <div id="hud">
+        擊殺數: <span id="kills">0</span> | 生命值: <span id="hp">100</span>
+    </div>
+
     <div id="instructions">
-        <h1>點擊螢幕開始遊戲</h1>
-        <p>W, A, S, D = 移動 | 空格 = 跳躍</p>
-        <p>滑鼠左鍵 = 射擊 | 滑鼠右鍵 = 瞄準 (ADS)</p>
+        <h1 style="margin-top:0;">點擊進入遊戲</h1>
+        <p>W, A, S, D = 移動 | 滑鼠 = 視角控制</p>
+        <p>滑鼠左鍵 = 射擊 | 滑鼠右鍵 = 開鏡瞄準 (ADS)</p>
     </div>
 
     <div id="crosshair"></div>
+    <div id="hitmarker"></div>
 
-    <!-- 導入 Three.js 與 PointerLockControls -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/PointerLockControls.js"></script>
 
     <script>
-        // 1. 基本場景與相機設定
+        // ---------------------------------------------------------
+        // 1. Web Audio 網頁音效生成器 (不需外部檔案即可發聲)
+        // ---------------------------------------------------------
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        
+        function playGunshotSound() {
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(300, audioCtx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.15);
+            gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.15);
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.15);
+        }
+
+        function playHitSound() {
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(800, audioCtx.currentTime);
+            osc.frequency.setValueAtTime(400, audioCtx.currentTime + 0.05);
+            gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.08);
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.08);
+        }
+
+        // ---------------------------------------------------------
+        // 2. 場景、光照與地形 (Voxel World)
+        // ---------------------------------------------------------
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x87ceeb); // 天空藍
-        scene.fog = new THREE.Fog(0x87ceeb, 10, 60);
+        scene.background = new THREE.Color(0x7ec0ee);
+        scene.fog = new THREE.FogExp2(0x7ec0ee, 0.015);
 
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
         const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -69,41 +100,122 @@
         renderer.shadowMap.enabled = true;
         document.body.appendChild(renderer.domElement);
 
-        // 光照設定
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
         scene.add(ambientLight);
 
         const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-        dirLight.position.set(20, 40, 20);
+        dirLight.position.set(50, 80, 50);
         dirLight.castShadow = true;
         scene.add(dirLight);
 
-        // 2. 建立麥塊風格的地形 (Voxel / 方塊)
-        const boxGeometry = new THREE.BoxGeometry(1, 1, 1);
-        const grassMaterial = new THREE.MeshLambertMaterial({ color: 0x557a2b });
-        const targetMaterial = new THREE.MeshLambertMaterial({ color: 0xd9534f });
+        // 地形與障礙物建造
+        const boxGeo = new THREE.BoxGeometry(1, 1, 1);
+        const grassMat = new THREE.MeshLambertMaterial({ color: 0x557a2b });
+        const dirtMat = new THREE.MeshLambertMaterial({ color: 0x8b5a2b });
+        const stoneMat = new THREE.MeshLambertMaterial({ color: 0x777777 });
 
-        // 地板 (由方塊組成的地面)
-        for (let x = -20; x <= 20; x++) {
-            for (let z = -20; z <= 20; z++) {
-                const block = new THREE.Mesh(boxGeometry, grassMaterial);
-                block.position.set(x, -0.5, z);
+        // 起伏地形
+        for (let x = -30; x <= 30; x++) {
+            for (let z = -30; z <= 30; z++) {
+                const height = Math.floor(Math.sin(x*0.2) * Math.cos(z*0.2) * 1.5);
+                const block = new THREE.Mesh(boxGeo, height > 0 ? grassMat : dirtMat);
+                block.position.set(x, height - 0.5, z);
                 block.receiveShadow = true;
                 scene.add(block);
             }
         }
 
-        // 建立幾個靶子方塊 (Target Boxes)
-        const targets = [];
-        for (let i = 0; i < 5; i++) {
-            const target = new THREE.Mesh(boxGeometry, targetMaterial);
-            target.position.set((Math.random() - 0.5) * 20, 1.5, -5 - Math.random() * 10);
-            target.castShadow = true;
-            scene.add(target);
-            targets.push(target);
+        // 石頭掩體
+        for(let i = 0; i < 15; i++) {
+            const wallX = (Math.random() - 0.5) * 40;
+            const wallZ = (Math.random() - 0.5) * 40;
+            for(let h = 0; h < 3; h++) {
+                const stone = new THREE.Mesh(boxGeo, stoneMat);
+                stone.position.set(wallX, h + 0.5, wallZ);
+                stone.castShadow = true;
+                scene.add(stone);
+            }
         }
 
-        // 3. 第一人稱控制器與移動邏輯
+        // ---------------------------------------------------------
+        // 3. 建構 3D 手臂與麥塊風格槍枝 (Gun & ArmRig)
+        // ---------------------------------------------------------
+        const weaponRig = new THREE.Group();
+        const armMat = new THREE.MeshLambertMaterial({ color: 0xe0ac69 }); // 膚色
+        const gunBodyMat = new THREE.MeshLambertMaterial({ color: 0x222222 }); // 槍身
+        const gunBarrelMat = new THREE.MeshLambertMaterial({ color: 0x444444 }); // 槍管
+
+        // 右手臂
+        const arm = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.6, 0.2), armMat);
+        arm.position.set(0.3, -0.3, -0.4);
+        arm.rotation.x = Math.PI / 4;
+        weaponRig.add(arm);
+
+        // 槍主體
+        const gunBody = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.2, 0.7), gunBodyMat);
+        gunBody.position.set(0.25, -0.2, -0.6);
+        weaponRig.add(gunBody);
+
+        // 槍管
+        const gunBarrel = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, 0.4), gunBarrelMat);
+        gunBarrel.position.set(0.25, -0.15, -1.0);
+        weaponRig.add(gunBarrel);
+
+        // 槍口焰 (Muzzle Flash)
+        const flashMat = new THREE.MeshBasicMaterial({ color: 0xffcc00, visible: false });
+        const muzzleFlash = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, 0.2), flashMat);
+        muzzleFlash.position.set(0.25, -0.15, -1.2);
+        weaponRig.add(muzzleFlash);
+
+        // 將槍綁定在相機前
+        camera.add(weaponRig);
+
+        // ---------------------------------------------------------
+        // 4. 怪物 AI 系統 (Zombie Spawner)
+        // ---------------------------------------------------------
+        const zombies = [];
+        const zombieMat = new THREE.MeshLambertMaterial({ color: 0x2e7d32 }); // 麥塊殭屍綠
+
+        function createZombie(x, z) {
+            const zombie = new THREE.Group();
+            
+            // 頭
+            const head = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.8, 0.8), zombieMat);
+            head.position.y = 1.6;
+            zombie.add(head);
+
+            // 身體
+            const body = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.0, 0.4), new THREE.MeshLambertMaterial({ color: 0x00838f }));
+            body.position.y = 0.7;
+            zombie.add(body);
+
+            // 雙手前伸 (麥塊殭屍招牌姿勢)
+            const arm1 = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.8, 0.3), zombieMat);
+            arm1.position.set(-0.55, 0.9, -0.3);
+            arm1.rotation.x = -Math.PI / 2;
+            zombie.add(arm1);
+
+            const arm2 = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.8, 0.3), zombieMat);
+            arm2.position.set(0.55, 0.9, -0.3);
+            arm2.rotation.x = -Math.PI / 2;
+            zombie.add(arm2);
+
+            zombie.position.set(x, 0, z);
+            scene.add(zombie);
+
+            return { mesh: zombie, hp: 100 };
+        }
+
+        // 初始生成 5 只怪物
+        for(let i=0; i<5; i++) {
+            const spawnAngle = Math.random() * Math.PI * 2;
+            const dist = 15 + Math.random() * 15;
+            zombies.push(createZombie(Math.cos(spawnAngle)*dist, Math.sin(spawnAngle)*dist));
+        }
+
+        // ---------------------------------------------------------
+        // 5. 玩家控制與射擊系統 (Recoil, ADS, Bullets)
+        // ---------------------------------------------------------
         const controls = new THREE.PointerLockControls(camera, document.body);
         const instructions = document.getElementById('instructions');
 
@@ -115,7 +227,10 @@
 
         const moveState = { forward: false, backward: false, left: false, right: false };
         const velocity = new THREE.Vector3();
-        const direction = new THREE.Vector3();
+        let isAiming = false;
+        let kills = 0, playerHp = 100;
+        const raycaster = new THREE.Raycaster();
+        const bullets = [];
 
         document.addEventListener('keydown', (e) => {
             if (e.code === 'KeyW') moveState.forward = true;
@@ -131,46 +246,89 @@
             if (e.code === 'KeyD') moveState.right = false;
         });
 
-        // 4. 專業槍戰核心：開鏡 (ADS) 與射擊 (Raycasting + 後座力)
-        let isAiming = false;
-        const raycaster = new THREE.Raycaster();
-
-        // 滑鼠監聽
         document.addEventListener('mousedown', (e) => {
             if (!controls.isLocked) return;
-
-            if (e.button === 0) {
-                shoot(); // 左鍵射擊
-            } else if (e.button === 2) {
-                isAiming = true; // 右鍵開鏡
-            }
+            if (e.button === 0) shoot();
+            if (e.button === 2) isAiming = true;
         });
 
         document.addEventListener('mouseup', (e) => {
             if (e.button === 2) isAiming = false;
         });
 
-        // 防止右鍵選單彈出
         document.addEventListener('contextmenu', e => e.preventDefault());
 
-        function shoot() {
-            // A. 後座力效果 (Recoil)
-            camera.rotation.x += 0.02;
+        function triggerHitmarker() {
+            const hm = document.getElementById('hitmarker');
+            hm.style.opacity = '1';
+            setTimeout(() => hm.style.opacity = '0', 100);
+        }
 
-            // B. 彈道 Raycast 檢測
+        function shoot() {
+            playGunshotSound();
+
+            // 1. 後座力與槍枝後座動畫
+            camera.rotation.x += 0.02;
+            weaponRig.position.z += 0.08;
+
+            // 2. 顯示槍口火焰
+            flashMat.visible = true;
+            setTimeout(() => flashMat.visible = false, 40);
+
+            // 3. 生成可見子彈彈道 (Tracer Bullet)
+            const bulletGeo = new THREE.BoxGeometry(0.05, 0.05, 0.5);
+            const bulletMat = new THREE.MeshBasicMaterial({ color: 0xffff00 });
+            const bullet = new THREE.Mesh(bulletGeo, bulletMat);
+            
+            // 計算槍口位置作為子彈起點
+            const muzzleWorldPos = new THREE.Vector3();
+            muzzleFlash.getWorldPosition(muzzleWorldPos);
+            bullet.position.copy(muzzleWorldPos);
+            bullet.quaternion.copy(camera.quaternion);
+            
+            scene.add(bullet);
+            bullets.push({ mesh: bullet, dir: camera.getWorldDirection(new THREE.Vector3()), life: 30 });
+
+            // 4. 擊中判定 (Raycasting)
             raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
-            const intersects = raycaster.intersectObjects(targets);
+            const zombieMeshes = zombies.map(z => z.mesh);
+            const intersects = raycaster.intersectObjects(zombieMeshes, true);
 
             if (intersects.length > 0) {
-                const hitObj = intersects[0].object;
-                // 擊中效果：改變顏色並往後倒
-                hitObj.material.color.setHex(0xffffff);
-                setTimeout(() => hitObj.material.color.setHex(0xd9534f), 100);
-                hitObj.position.z -= 0.2;
+                let hitMesh = intersects[0].object;
+                while (hitMesh.parent && !zombies.some(z => z.mesh === hitMesh)) {
+                    hitMesh = hitMesh.parent;
+                }
+                
+                const targetZombie = zombies.find(z => z.mesh === hitMesh);
+                if (targetZombie) {
+                    targetZombie.hp -= 35;
+                    playHitSound();
+                    triggerHitmarker();
+
+                    // 受擊受力後退效果
+                    targetZombie.mesh.position.addScaledVector(bullet.dir, -0.5);
+
+                    // 死亡判定
+                    if (targetZombie.hp <= 0) {
+                        scene.remove(targetZombie.mesh);
+                        zombies.splice(zombies.indexOf(targetZombie), 1);
+                        kills++;
+                        document.getElementById('kills').innerText = kills;
+
+                        // 重新補充一隻怪物
+                        setTimeout(() => {
+                            const angle = Math.random() * Math.PI * 2;
+                            zombies.push(createZombie(Math.cos(angle)*25, Math.sin(angle)*25));
+                        }, 2000);
+                    }
+                }
             }
         }
 
-        // 5. 遊戲主循環 (Main Loop)
+        // ---------------------------------------------------------
+        // 6. 遊戲主循環 (Game Loop & Animation)
+        // ---------------------------------------------------------
         let prevTime = performance.now();
 
         function animate() {
@@ -180,24 +338,73 @@
             const delta = (time - prevTime) / 1000;
 
             if (controls.isLocked) {
-                // 移動衰減
+                // A. 玩家移動計算
                 velocity.x -= velocity.x * 10.0 * delta;
                 velocity.z -= velocity.z * 10.0 * delta;
 
-                direction.z = Number(moveState.forward) - Number(moveState.backward);
-                direction.x = Number(moveState.right) - Number(moveState.left);
-                direction.normalize();
-
-                if (moveState.forward || moveState.backward) velocity.z -= direction.z * 100.0 * delta;
-                if (moveState.left || moveState.right) velocity.x -= direction.x * 100.0 * delta;
+                const dirZ = Number(moveState.forward) - Number(moveState.backward);
+                const dirX = Number(moveState.right) - Number(moveState.left);
+                
+                if (moveState.forward || moveState.backward) velocity.z -= dirZ * 60.0 * delta;
+                if (moveState.left || moveState.right) velocity.x -= dirX * 60.0 * delta;
 
                 controls.moveRight(-velocity.x * delta);
                 controls.moveForward(-velocity.z * delta);
 
-                // 平滑開鏡 (ADS FOV 縮放)
-                const targetFOV = isAiming ? 45 : 75;
-                camera.fov += (targetFOV - camera.fov) * 0.1;
+                // B. 持槍步調晃動動畫 (Sway / Bobbing)
+                if (moveState.forward || moveState.backward || moveState.left || moveState.right) {
+                    weaponRig.position.y = -0.05 + Math.sin(time * 0.01) * 0.02;
+                    weaponRig.position.x = Math.cos(time * 0.005) * 0.02;
+                }
+
+                // C. 開鏡 ADS 平滑過渡 (Aiming Down Sights)
+                const targetFov = isAiming ? 45 : 75;
+                camera.fov += (targetFov - camera.fov) * 0.15;
                 camera.updateProjectionMatrix();
+
+                const targetGunPos = isAiming ? new THREE.Vector3(-0.25, 0.08, 0) : new THREE.Vector3(0, 0, 0);
+                weaponRig.position.lerp(targetGunPos, 0.2);
+
+                // 槍枝後座力復位
+                weaponRig.position.z *= 0.8;
+
+                // D. 子彈飛行邏輯
+                for(let i = bullets.length - 1; i >= 0; i--) {
+                    const b = bullets[i];
+                    b.mesh.position.addScaledVector(b.dir, 1.5);
+                    b.life--;
+                    if(b.life <= 0) {
+                        scene.remove(b.mesh);
+                        bullets.splice(i, 1);
+                    }
+                }
+
+                // E. 怪物 AI 追擊邏輯
+                const playerPos = controls.getObject().position;
+                zombies.forEach(z => {
+                    const zPos = z.mesh.position;
+                    const angle = Math.atan2(playerPos.x - zPos.x, playerPos.z - zPos.z);
+                    z.mesh.rotation.y = angle;
+
+                    // 朝玩家移動
+                    z.mesh.position.x += Math.sin(angle) * 2.5 * delta;
+                    z.mesh.position.z += Math.cos(angle) * 2.5 * delta;
+
+                    // 怪物手臂擺動動畫
+                    z.mesh.children[2].rotation.x = -Math.PI / 2 + Math.sin(time * 0.01) * 0.2;
+                    z.mesh.children[3].rotation.x = -Math.PI / 2 - Math.sin(time * 0.01) * 0.2;
+
+                    // 攻擊玩家
+                    const dist = playerPos.distanceTo(zPos);
+                    if (dist < 1.5) {
+                        playerHp = Math.max(0, playerHp - 0.2);
+                        document.getElementById('hp').innerText = Math.floor(playerHp);
+                        if (playerHp <= 0) {
+                            alert("你被殭屍吃掉了！擊殺數: " + kills);
+                            location.reload();
+                        }
+                    }
+                });
             }
 
             prevTime = time;
@@ -206,7 +413,7 @@
 
         animate();
 
-        // 視窗大小自適應
+        // 視窗自適應
         window.addEventListener('resize', () => {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();

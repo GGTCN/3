@@ -3,751 +3,711 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Minecraft FPS - 修正碰撞箱與攻擊受傷系統</title>
+    <title>Minecraft FPS - 專業沙盒生存版 (已修復版)</title>
     <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
-        body, html { width: 100%; height: 100%; overflow: hidden; background-color: #000; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-        #game-container { width: 100%; height: 100%; position: relative; }
+        * { touch-action: manipulation; box-sizing: border-box; }
+        body { margin: 0; overflow: hidden; font-family: 'Consolas', 'Courier New', monospace; user-select: none; background: #000; }
         
-        /* UI 準星與 HUD */
+        /* Minecraft 風格 UI HUD */
+        #hud {
+            position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+            display: flex; gap: 20px; align-items: center; z-index: 10;
+            background: rgba(0, 0, 0, 0.6); padding: 12px 24px; border: 3px solid #3c3c3c;
+            box-shadow: inset 0 0 10px #000, 0 4px 10px rgba(0,0,0,0.5); border-radius: 4px; color: #fff;
+        }
+        .hud-item { font-size: 18px; font-weight: bold; text-shadow: 2px 2px 0px #000; display: flex; align-items: center; gap: 8px; }
+        
+        #instructions {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            color: white; background: rgba(10, 10, 10, 0.9); padding: 30px 50px;
+            border-radius: 4px; text-align: center; cursor: pointer; z-index: 30;
+            border: 4px solid #555; box-shadow: 0 0 40px rgba(0,0,0,0.9);
+        }
+        #instructions h2 { color: #55ff55; text-shadow: 2px 2px #00aa00; margin-top: 0; }
+        
+        /* 準心 */
         #crosshair {
-            position: absolute; top: 50%; left: 50%; width: 12px; height: 12px;
+            position: absolute; top: 50%; left: 50%; width: 16px; height: 16px;
             transform: translate(-50%, -50%); pointer-events: none; z-index: 10;
         }
-        #crosshair::before, #crosshair::after {
-            content: ''; position: absolute; background: rgba(255, 255, 255, 0.8);
-        }
-        #crosshair::before { top: 5px; left: 0; width: 12px; height: 2px; }
-        #crosshair::after { top: 0; left: 5px; width: 2px; height: 12px; }
-
-        #hud {
-            position: absolute; top: 15px; left: 15px; z-index: 10; color: #fff;
-            font-weight: bold; font-size: 18px; text-shadow: 2px 2px 4px #000;
-        }
+        #crosshair::before, #crosshair::after { content: ''; position: absolute; background: rgba(255, 255, 255, 0.85); box-shadow: 0 0 2px #000; }
+        #crosshair::before { top: 7px; left: 0; width: 16px; height: 2px; }
+        #crosshair::after { top: 0; left: 7px; width: 2px; height: 16px; }
         
-        /* 血條與彈藥 */
-        #health-container {
-            position: absolute; bottom: 20px; left: 20px; z-index: 10;
-            background: rgba(0,0,0,0.5); padding: 10px 15px; border-radius: 8px; border: 2px solid #555;
+        #hitmarker {
+            position: absolute; top: 50%; left: 50%; width: 24px; height: 24px;
+            transform: translate(-50%, -50%) rotate(45deg); pointer-events: none; z-index: 10; opacity: 0;
+            transition: opacity 0.05s;
         }
-        #health-bar-outer {
-            width: 200px; height: 18px; background: #333; border-radius: 4px; overflow: hidden; margin-top: 5px;
-        }
-        #health-bar-inner {
-            width: 100%; height: 100%; background: linear-gradient(90deg, #ff3333, #ff6666); transition: width 0.1s ease-out;
-        }
+        #hitmarker::before, #hitmarker::after { content: ''; position: absolute; background: #ff3333; }
+        #hitmarker::before { top: 11px; left: 0; width: 24px; height: 2px; }
+        #hitmarker::after { top: 0; left: 11px; width: 2px; height: 24px; }
 
-        #ammo-container {
-            position: absolute; bottom: 20px; right: 20px; z-index: 10;
-            background: rgba(0,0,0,0.5); padding: 10px 15px; border-radius: 8px; border: 2px solid #555;
-            color: #fff; font-size: 22px; text-align: right; text-shadow: 2px 2px 4px #000;
+        /* 手機控制按鈕 */
+        .mobile-btn {
+            position: absolute; width: 70px; height: 70px; background: rgba(0, 0, 0, 0.5);
+            border: 2px solid #888; border-radius: 8px; color: white;
+            font-size: 14px; font-weight: bold; display: flex; justify-content: center;
+            align-items: center; z-index: 20; text-shadow: 1px 1px #000;
         }
-
-        /* 全螢幕受傷紅閃特效 */
-        #hurt-flash {
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(255, 0, 0, 0.4); pointer-events: none; z-index: 20;
-            opacity: 0; transition: opacity 0.1s ease-out;
-        }
-
-        /* 點擊開始畫面 & Game Over 遮罩 */
-        .overlay-screen {
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.85); color: #fff; display: flex;
-            flex-direction: column; justify-content: center; align-items: center;
-            z-index: 30; cursor: pointer;
-        }
-        .overlay-screen h1 { font-size: 42px; color: #55ff55; text-shadow: 3px 3px 0px #000; margin-bottom: 15px; }
-        .overlay-screen p { font-size: 18px; color: #ccc; margin-bottom: 25px; text-align: center; line-height: 1.5; }
-        .btn {
-            padding: 12px 30px; background: #ff4444; color: #fff; font-size: 20px; font-weight: bold;
-            border: none; border-radius: 5px; cursor: pointer; border: 2px solid #fff;
-        }
-        .btn:hover { background: #ff6666; }
-
-        /* 手機虛擬搖桿 UI */
-        #mobile-controls {
-            position: absolute; bottom: 0; left: 0; width: 100%; height: 100%;
-            pointer-events: none; z-index: 15; display: none;
-        }
+        .mobile-btn:active { background: rgba(255, 255, 255, 0.3); }
+        #btn-fire { bottom: 30px; right: 30px; width: 85px; height: 85px; background: rgba(180, 40, 40, 0.6); border-color: #ff5555; }
+        #btn-ads { bottom: 130px; right: 30px; }
+        #btn-reload { bottom: 210px; right: 30px; }
+        #btn-jump { bottom: 30px; right: 135px; }
+        
         #joystick-zone {
             position: absolute; bottom: 30px; left: 30px; width: 120px; height: 120px;
-            background: rgba(255,255,255,0.15); border: 2px solid rgba(255,255,255,0.3);
-            border-radius: 60px; pointer-events: auto;
+            z-index: 20; display: none;
+        }
+        #joystick-base {
+            width: 100%; height: 100%; background: rgba(0, 0, 0, 0.4);
+            border: 2px solid #666; border-radius: 50%; position: relative;
         }
         #joystick-stick {
-            position: absolute; top: 35px; left: 35px; width: 50px; height: 50px;
-            background: rgba(255,255,255,0.5); border-radius: 25px;
-        }
-        #mobile-btn-shoot {
-            position: absolute; bottom: 40px; right: 30px; width: 80px; height: 80px;
-            background: rgba(255,50,50,0.6); border: 2px solid #fff; border-radius: 40px;
-            color: #fff; font-weight: bold; font-size: 18px; pointer-events: auto;
-            display: flex; justify-content: center; align-items: center;
-        }
-
-        /* 浮動傷害文字 */
-        .damage-number {
-            position: absolute; color: #ffeb3b; font-weight: bold; font-size: 22px;
-            text-shadow: 2px 2px 2px #000; pointer-events: none; z-index: 25;
-            animation: floatUp 0.6s ease-out forwards;
-        }
-        @keyframes floatUp {
-            0% { opacity: 1; transform: translateY(0) scale(1); }
-            100% { opacity: 0; transform: translateY(-30px) scale(1.3); }
+            width: 40px; height: 40px; background: rgba(255, 255, 255, 0.6);
+            border-radius: 50%; position: absolute; top: 40px; left: 40px; pointer-events: none;
         }
     </style>
 </head>
 <body>
-    <div id="game-container">
-        <div id="crosshair"></div>
-        <div id="hurt-flash"></div>
 
-        <div id="hud">
-            <div>擊殺數: <span id="score">0</span></div>
-        </div>
-
-        <div id="health-container">
-            <div style="color:#fff; font-size:14px;">玩家生命值 (HP)</div>
-            <div id="health-bar-outer"><div id="health-bar-inner"></div></div>
-        </div>
-
-        <div id="ammo-container">
-            <span id="ammo-clip">30</span> / <span id="ammo-reserve">120</span>
-        </div>
-
-        <!-- 開始畫面 -->
-        <div id="start-screen" class="overlay-screen">
-            <h1>MINECRAFT FPS</h1>
-            <p>鍵盤 W A S D 移動 | 空格鍵 跳躍 | R 換彈<br>滑鼠左鍵 射擊 | 右鍵 開鏡 (ADS)<br>點擊畫面鎖定滑鼠進入遊戲</p>
-            <button class="btn">開始遊戲</button>
-        </div>
-
-        <!-- Game Over 畫面 -->
-        <div id="gameover-screen" class="overlay-screen" style="display: none;">
-            <h1 style="color:#ff3333;">GAME OVER</h1>
-            <p>你被殭屍擊敗了！<br>最終擊殺數: <span id="final-score">0</span></p>
-            <button class="btn" onclick="restartGame()">重新開始</button>
-        </div>
-
-        <!-- 手機控制介面 -->
-        <div id="mobile-controls">
-            <div id="joystick-zone"><div id="joystick-stick"></div></div>
-            <div id="mobile-btn-shoot">射擊</div>
-        </div>
+    <div id="hud">
+        <div class="hud-item" style="color: #ff5555;">❤ 生命: <span id="hp">100</span></div>
+        <div class="hud-item" style="color: #ffff55;">⚡ 擊殺: <span id="kills">0</span></div>
+        <div class="hud-item" style="color: #55ffff;">🔫 彈藥: <span id="ammo">30</span>/<span id="reserve">120</span></div>
     </div>
 
+    <div id="instructions">
+        <h2>MINECRAFT FPS 生存沙盒</h2>
+        <p><b>PC 操控:</b> WASD 移動 | 空格 跳躍 | 左鍵 射擊 | 右鍵 瞄準 | R 換彈</p>
+        <p><b>手機操控:</b> 左搖桿移動 | 右畫面滑動旋轉 | 專屬按鈕</p>
+        <p style="color: #aaa; font-size: 13px; margin-top: 15px;">[ 點擊畫面開始遊戲 ]</p>
+    </div>
+
+    <div id="crosshair"></div>
+    <div id="hitmarker"></div>
+
+    <div id="joystick-zone">
+        <div id="joystick-base"><div id="joystick-stick"></div></div>
+    </div>
+    <div id="btn-fire" class="mobile-btn" style="display:none;">開火</div>
+    <div id="btn-ads" class="mobile-btn" style="display:none;">瞄準</div>
+    <div id="btn-reload" class="mobile-btn" style="display:none;">換彈</div>
+    <div id="btn-jump" class="mobile-btn" style="display:none;">跳躍</div>
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
     <script>
-        // --- 全域變數定義 ---
-        let scene, camera, renderer, clock;
-        let terrainBlocks = [];
-        let zombies = [];
-        let player = {
-            hp: 100, maxHp: 100,
-            pos: new THREE.Vector3(0, 5, 0),
-            vel: new THREE.Vector3(),
-            width: 0.6, height: 1.8, depth: 0.6,
-            isGrounded: false,
-            score: 0
-        };
-
-        // 槍械與視角參數
-        let pitchAngle = 0, yawAngle = 0;
-        let keys = {}, isPointerLocked = false;
-        let isAiming = false, isReloading = false;
-        let ammoInClip = 30, clipSize = 30, reserveAmmo = 120;
-        let lastShootTime = 0, shootInterval = 0.12; // 射擊間隔(秒)
-        let gunGroup, muzzleFlash;
-
-        // 音效系統 (Web Audio API)
-        let audioCtx = null;
-        function initAudio() {
-            if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        }
-        function playSound(type) {
-            if (!audioCtx) return;
-            const osc = audioCtx.createOscillator();
-            const gain = audioCtx.createGain();
-            osc.connect(gain);
-            gain.connect(audioCtx.destination);
-            const now = audioCtx.currentTime;
-
-            if (type === 'shoot') {
-                osc.type = 'sawtooth';
-                osc.frequency.setValueAtTime(400, now);
-                osc.frequency.exponentialRampToValueAtTime(40, now + 0.1);
-                gain.gain.setValueAtTime(0.3, now);
-                gain.gain.linearRampToValueAtTime(0.01, now + 0.1);
-                osc.start(now); osc.stop(now + 0.1);
-            } else if (type === 'hit') {
-                osc.type = 'square';
-                osc.frequency.setValueAtTime(150, now);
-                osc.frequency.linearRampToValueAtTime(80, now + 0.08);
-                gain.gain.setValueAtTime(0.2, now);
-                gain.gain.linearRampToValueAtTime(0.01, now + 0.08);
-                osc.start(now); osc.stop(now + 0.08);
-            } else if (type === 'playerHurt') {
-                osc.type = 'triangle';
-                osc.frequency.setValueAtTime(120, now);
-                osc.frequency.exponentialRampToValueAtTime(30, now + 0.25);
-                gain.gain.setValueAtTime(0.5, now);
-                gain.gain.linearRampToValueAtTime(0.01, now + 0.25);
-                osc.start(now); osc.stop(now + 0.25);
-            } else if (type === 'reload') {
-                osc.type = 'sine';
-                osc.frequency.setValueAtTime(600, now);
-                osc.frequency.linearRampToValueAtTime(300, now + 0.2);
-                gain.gain.setValueAtTime(0.1, now);
-                gain.gain.linearRampToValueAtTime(0.01, now + 0.2);
-                osc.start(now); osc.stop(now + 0.2);
-            }
-        }
-
-        // --- 程序化 16x16 像素貼圖生成器 ---
+        const isMobile = /Android|iPhone|iPad/i.test(navigator.userAgent) || window.innerWidth < 800;
+        
+        // ---------------------------------------------------------
+        // 1. 程序化生成 Minecraft 貼圖
+        // ---------------------------------------------------------
         function createPixelTexture(type) {
             const canvas = document.createElement('canvas');
             canvas.width = 16; canvas.height = 16;
             const ctx = canvas.getContext('2d');
 
-            for (let x = 0; x < 16; x++) {
-                for (let y = 0; y < 16; y++) {
-                    let color = '#888';
-                    if (type === 'grass') {
-                        const val = Math.floor(Math.random() * 40 + 120);
-                        color = `rgb(30, ${val}, 30)`;
-                    } else if (type === 'dirt') {
-                        const val = Math.floor(Math.random() * 30 + 80);
-                        color = `rgb(${val}, ${Math.floor(val*0.65)}, ${Math.floor(val*0.4)})`;
-                    } else if (type === 'stone') {
-                        const val = Math.floor(Math.random() * 40 + 100);
-                        color = `rgb(${val}, ${val}, ${val})`;
-                    } else if (type === 'zombieFace') {
-                        if ((x >= 2 && x <= 5 && y >= 4 && y <= 6) || (x >= 10 && x <= 13 && y >= 4 && y <= 6)) color = '#000'; // 眼睛
-                        else if (x >= 5 && x <= 10 && y >= 9 && y <= 12) color = '#113311'; // 嘴巴
-                        else color = `rgb(40, ${Math.floor(Math.random()*40+100)}, 50)`;
-                    } else if (type === 'zombieBody') {
-                        color = `rgb(30, ${Math.floor(Math.random()*30+80)}, 110)`;
-                    }
-                    ctx.fillStyle = color;
-                    ctx.fillRect(x, y, 1, 1);
+            if (type === 'grass_top') {
+                ctx.fillStyle = '#5b8731'; ctx.fillRect(0, 0, 16, 16);
+                for(let i=0; i<30; i++) {
+                    ctx.fillStyle = Math.random() > 0.5 ? '#4c7824' : '#689639';
+                    ctx.fillRect(Math.floor(Math.random()*16), Math.floor(Math.random()*16), 1, 1);
                 }
+            } else if (type === 'grass_side') {
+                ctx.fillStyle = '#866043'; ctx.fillRect(0, 0, 16, 16);
+                for(let i=0; i<40; i++) {
+                    ctx.fillStyle = Math.random() > 0.5 ? '#735135' : '#976d4d';
+                    ctx.fillRect(Math.floor(Math.random()*16), Math.floor(Math.random()*16), 1, 1);
+                }
+                ctx.fillStyle = '#5b8731'; ctx.fillRect(0, 0, 16, 4);
+                for(let i=0; i<16; i++) {
+                    let h = Math.floor(Math.random()*3);
+                    ctx.fillRect(i, 3, 1, h);
+                }
+            } else if (type === 'dirt') {
+                ctx.fillStyle = '#866043'; ctx.fillRect(0, 0, 16, 16);
+                for(let i=0; i<50; i++) {
+                    ctx.fillStyle = Math.random() > 0.5 ? '#735135' : '#976d4d';
+                    ctx.fillRect(Math.floor(Math.random()*16), Math.floor(Math.random()*16), 1, 1);
+                }
+            } else if (type === 'stone') {
+                ctx.fillStyle = '#737373'; ctx.fillRect(0, 0, 16, 16);
+                for(let i=0; i<50; i++) {
+                    ctx.fillStyle = Math.random() > 0.5 ? '#616161' : '#858585';
+                    ctx.fillRect(Math.floor(Math.random()*16), Math.floor(Math.random()*16), 1, 1);
+                }
+            } else if (type === 'zombie_face') {
+                ctx.fillStyle = '#255229'; ctx.fillRect(0, 0, 16, 16);
+                ctx.fillStyle = '#000000'; ctx.fillRect(2, 6, 4, 2); ctx.fillRect(10, 6, 4, 2);
+                ctx.fillStyle = '#ffffff'; ctx.fillRect(4, 6, 2, 2); ctx.fillRect(10, 6, 2, 2);
+                ctx.fillStyle = '#17361a'; ctx.fillRect(6, 10, 4, 3);
             }
+
             const texture = new THREE.CanvasTexture(canvas);
             texture.magFilter = THREE.NearestFilter;
             texture.minFilter = THREE.NearestFilter;
             return texture;
         }
 
-        // --- 遊戲初始化 ---
-        function init() {
-            clock = new THREE.Clock();
-            scene = new THREE.Scene();
-            scene.background = new THREE.Color(0x87CEEB);
-            scene.fog = new THREE.FogExp2(0x87CEEB, 0.025);
+        const texGrassTop = createPixelTexture('grass_top');
+        const texGrassSide = createPixelTexture('grass_side');
+        const texDirt = createPixelTexture('dirt');
+        const texStone = createPixelTexture('stone');
+        const texZombieFace = createPixelTexture('zombie_face');
 
-            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const matGrassBlock = [
+            new THREE.MeshLambertMaterial({ map: texGrassSide }),
+            new THREE.MeshLambertMaterial({ map: texGrassSide }),
+            new THREE.MeshLambertMaterial({ map: texGrassTop }),
+            new THREE.MeshLambertMaterial({ map: texDirt }),
+            new THREE.MeshLambertMaterial({ map: texGrassSide }),
+            new THREE.MeshLambertMaterial({ map: texGrassSide })
+        ];
+        const matStoneBlock = new THREE.MeshLambertMaterial({ map: texStone });
 
-            renderer = new THREE.WebGLRenderer({ antialias: true });
-            renderer.setSize(window.innerWidth, window.innerHeight);
-            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-            renderer.shadowMap.enabled = true;
-            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-            document.getElementById('game-container').appendChild(renderer.domElement);
-
-            // 光照設定
-            const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
-            scene.add(ambientLight);
-
-            const sunLight = new THREE.DirectionalLight(0xffffff, 0.8);
-            sunLight.position.set(40, 60, 20);
-            sunLight.castShadow = true;
-            sunLight.shadow.mapSize.width = 2048;
-            sunLight.shadow.mapSize.height = 2048;
-            sunLight.shadow.camera.near = 0.5;
-            sunLight.shadow.camera.far = 150;
-            const d = 30;
-            sunLight.shadow.camera.left = -d; sunLight.shadow.camera.right = d;
-            sunLight.shadow.camera.top = d; sunLight.shadow.camera.bottom = -d;
-            scene.add(sunLight);
-
-            // 建立地圖與槍械
-            buildTerrain();
-            createGun();
-
-            // 事件監聽
-            setupControls();
-            window.addEventListener('resize', onWindowResize);
-
-            // 生成初始殭屍
-            for (let i = 0; i < 6; i++) spawnZombie();
-
-            animate();
+        // ---------------------------------------------------------
+        // 2. 音效生成器 (修復 AudioContext 初始化防擋)
+        // ---------------------------------------------------------
+        let audioCtx = null;
+        function playSound(freq, duration, type='sawtooth', volume=0.2) {
+            try {
+                if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                if (audioCtx.state === 'suspended') audioCtx.resume();
+                
+                const osc = audioCtx.createOscillator(), gain = audioCtx.createGain();
+                osc.type = type;
+                osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+                gain.gain.setValueAtTime(volume, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+                osc.connect(gain); gain.connect(audioCtx.destination);
+                osc.start(); osc.stop(audioCtx.currentTime + duration);
+            } catch(e){}
         }
 
-        // --- 建立地圖方塊 ---
-        function buildTerrain() {
-            const boxGeo = new THREE.BoxGeometry(1, 1, 1);
-            const texGrass = createPixelTexture('grass');
-            const texDirt = createPixelTexture('dirt');
-            const texStone = createPixelTexture('stone');
+        // ---------------------------------------------------------
+        // 3. 3D 場景與光影渲染
+        // ---------------------------------------------------------
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x7ec0ee);
+        scene.fog = new THREE.FogExp2(0x7ec0ee, 0.012);
 
-            const matGrassTop = new THREE.MeshLambertMaterial({ map: texGrass });
-            const matDirt = new THREE.MeshLambertMaterial({ map: texDirt });
-            const matStone = new THREE.MeshLambertMaterial({ map: texStone });
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        document.body.appendChild(renderer.domElement);
 
-            const grassMaterials = [matDirt, matDirt, matGrassTop, matDirt, matDirt, matDirt];
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.65);
+        scene.add(ambientLight);
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.75);
+        dirLight.position.set(40, 60, 20);
+        dirLight.castShadow = true;
+        dirLight.shadow.mapSize.width = 2048; dirLight.shadow.mapSize.height = 2048;
+        scene.add(dirLight);
 
-            // 建立 32x32 平原地形
-            for (let x = -16; x < 16; x++) {
-                for (let z = -16; z < 16; z++) {
-                    let height = Math.floor(Math.sin(x * 0.2) * Math.cos(z * 0.2) * 1.5);
-                    for (let y = -2; y <= height; y++) {
-                        let mats = (y === height) ? grassMaterials : (y < -1 ? matStone : matDirt);
-                        const block = new THREE.Mesh(boxGeo, mats);
-                        block.position.set(x, y, z);
-                        block.receiveShadow = true;
-                        block.castShadow = true;
-                        scene.add(block);
-                        
-                        // 保存碰撞箱 (AABB)
-                        block.geometry.computeBoundingBox();
-                        terrainBlocks.push({
-                            mesh: block,
-                            box: new THREE.Box3().setFromObject(block)
-                        });
+        // ---------------------------------------------------------
+        // 4. 地形生成與完整 AABB 碰撞箱系統
+        // ---------------------------------------------------------
+        const boxGeo = new THREE.BoxGeometry(1, 1, 1);
+        const terrainBlocks = [];
+        const colliders = []; // 用於實體碰撞檢測
+        const MAP_SIZE = 24;
+
+        for (let x = -MAP_SIZE; x <= MAP_SIZE; x++) {
+            for (let z = -MAP_SIZE; z <= MAP_SIZE; z++) {
+                // 地表草地 (Y=0)
+                const block = new THREE.Mesh(boxGeo, matGrassBlock);
+                block.position.set(x, 0, z);
+                block.receiveShadow = true; block.castShadow = true;
+                scene.add(block); terrainBlocks.push(block);
+
+                // 石頭障礙 (Y=1~3)
+                if (Math.random() < 0.02 && Math.abs(x) > 4 && Math.abs(z) > 4) {
+                    for(let h = 1; h <= 3; h++) {
+                        const sBlock = new THREE.Mesh(boxGeo, matStoneBlock);
+                        sBlock.position.set(x, h, z);
+                        sBlock.receiveShadow = true; sBlock.castShadow = true;
+                        scene.add(sBlock); 
+                        terrainBlocks.push(sBlock);
+                        colliders.push(new THREE.Box3().setFromObject(sBlock));
                     }
                 }
             }
         }
 
-        // --- 建立槍械 3D 模型 ---
-        function createGun() {
-            gunGroup = new THREE.Group();
+        // ---------------------------------------------------------
+        // 5. 槍械模型
+        // ---------------------------------------------------------
+        const weaponGroup = new THREE.Group();
+        const matGunMetal = new THREE.MeshLambertMaterial({ color: 0x1e1e1e });
+        const matGunStock = new THREE.MeshLambertMaterial({ color: 0x3d2514 });
 
-            const gunBodyMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.3 });
-            const gunMetalMat = new THREE.MeshStandardMaterial({ color: 0x555555, metalness: 0.8 });
+        const gBody = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.14, 0.6), matGunMetal);
+        gBody.position.set(0.2, -0.18, -0.45); weaponGroup.add(gBody);
 
-            // 槍身與槍管
-            const body = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.12, 0.4), gunBodyMat);
-            body.position.set(0.18, -0.18, -0.35);
-            
-            const barrel = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.04, 0.3), gunMetalMat);
-            barrel.position.set(0.18, -0.14, -0.55);
+        const gBarrel = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.5), matGunMetal);
+        gBarrel.position.set(0.2, -0.14, -0.85); weaponGroup.add(gBarrel);
 
-            const handle = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.16, 0.08), gunBodyMat);
-            handle.position.set(0.18, -0.28, -0.28);
-            handle.rotation.x = -0.3;
+        const gStock = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.12, 0.3), matGunStock);
+        gStock.position.set(0.2, -0.16, -0.15); weaponGroup.add(gStock);
 
-            // 槍口火花 (Muzzle Flash)
-            const flashGeo = new THREE.BufferGeometry();
-            const flashMat = new THREE.MeshBasicMaterial({ color: 0xffaa00, transparent: true, opacity: 0 });
-            muzzleFlash = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 8), flashMat);
-            muzzleFlash.position.set(0.18, -0.14, -0.72);
+        const flashMat = new THREE.MeshBasicMaterial({ color: 0xffcc00, visible: false });
+        const muzzleFlash = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.18, 0.18), flashMat);
+        muzzleFlash.position.set(0.2, -0.14, -1.15); weaponGroup.add(muzzleFlash);
 
-            gunGroup.add(body, barrel, handle, muzzleFlash);
-            camera.add(gunGroup);
-            scene.add(camera);
+        camera.add(weaponGroup);
+
+        // ---------------------------------------------------------
+        // 6. 殭屍、血條與傷害數字
+        // ---------------------------------------------------------
+        const zombies = [];
+        const damageNumbers = [];
+
+        function createHealthBar() {
+            const group = new THREE.Group();
+            const bg = new THREE.Mesh(new THREE.PlaneGeometry(1.0, 0.12), new THREE.MeshBasicMaterial({ color: 0x222222, side: THREE.DoubleSide }));
+            group.add(bg);
+
+            const fgGeo = new THREE.PlaneGeometry(0.96, 0.08);
+            fgGeo.translate(0.48, 0, 0);
+            const fg = new THREE.Mesh(fgGeo, new THREE.MeshBasicMaterial({ color: 0x00ff00, side: THREE.DoubleSide }));
+            fg.position.set(-0.48, 0, 0.01);
+            group.add(fg);
+
+            group.position.set(0, 2.2, 0);
+            return { group, fg };
         }
 
-        // --- 生成殭屍角色 ---
-        function spawnZombie() {
-            const zombie = new THREE.Group();
-            const texFace = createPixelTexture('zombieFace');
-            const texBody = createPixelTexture('zombieBody');
+        function createZombie(x, z) {
+            const zGroup = new THREE.Group();
+            const matSkin = new THREE.MeshLambertMaterial({ color: 0x2e7d32 });
+            const matClothes = new THREE.MeshLambertMaterial({ color: 0x00838f });
+            const matPants = new THREE.MeshLambertMaterial({ color: 0x283593 });
 
-            const matHead = [
-                new THREE.MeshLambertMaterial({ map: texBody }), new THREE.MeshLambertMaterial({ map: texBody }),
-                new THREE.MeshLambertMaterial({ map: texBody }), new THREE.MeshLambertMaterial({ map: texBody }),
-                new THREE.MeshLambertMaterial({ map: texFace }), new THREE.MeshLambertMaterial({ map: texBody })
+            const headMaterials = [
+                matSkin, matSkin, matSkin, matSkin, matSkin,
+                new THREE.MeshLambertMaterial({ map: texZombieFace })
             ];
-            const matBody = new THREE.MeshLambertMaterial({ map: texBody });
+            const head = new THREE.Mesh(new THREE.BoxGeometry(0.65, 0.65, 0.65), headMaterials);
+            head.position.y = 1.45; head.castShadow = true; zGroup.add(head);
 
-            // 頭部、身體、手腿
-            const head = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5), matHead);
-            head.position.y = 1.25; head.castShadow = true;
+            const body = new THREE.Mesh(new THREE.BoxGeometry(0.65, 0.85, 0.35), matClothes);
+            body.position.y = 0.7; body.castShadow = true; zGroup.add(body);
 
-            const body = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.75, 0.25), matBody);
-            body.position.y = 0.625; body.castShadow = true;
+            const armL = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.75, 0.22), matClothes);
+            armL.position.set(-0.45, 0.75, -0.3); armL.rotation.x = -Math.PI / 2; zGroup.add(armL);
 
-            const armL = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.7, 0.2), matBody);
-            armL.position.set(-0.35, 0.6, -0.25); armL.rotation.x = -Math.PI / 2; armL.castShadow = true;
+            const armR = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.75, 0.22), matClothes);
+            armR.position.set(0.45, 0.75, -0.3); armR.rotation.x = -Math.PI / 2; zGroup.add(armR);
 
-            const armR = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.7, 0.2), matBody);
-            armR.position.set(0.35, 0.6, -0.25); armR.rotation.x = -Math.PI / 2; armR.castShadow = true;
+            const legL = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.75, 0.25), matPants);
+            legL.position.set(-0.2, 0.0, 0); zGroup.add(legL);
+            const legR = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.75, 0.25), matPants);
+            legR.position.set(0.2, 0.0, 0); zGroup.add(legR);
 
-            const legL = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.75, 0.2), matBody);
-            legL.position.set(-0.15, 0, 0); legL.castShadow = true;
+            const hpBar = createHealthBar();
+            zGroup.add(hpBar.group);
 
-            const legR = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.75, 0.2), matBody);
-            legR.position.set(0.15, 0, 0); legR.castShadow = true;
+            zGroup.position.set(x, 0.5, z);
+            scene.add(zGroup);
 
-            zombie.add(head, body, armL, armR, legL, legR);
-
-            // 隨機生成位置
-            let angle = Math.random() * Math.PI * 2;
-            let dist = 12 + Math.random() * 15;
-            zombie.position.set(player.pos.x + Math.cos(angle) * dist, 3, player.pos.z + Math.sin(angle) * dist);
-
-            scene.add(zombie);
-
-            // 殭屍物件屬性
-            const zombieData = {
-                group: zombie,
-                legL: legL, legR: legR,
-                hp: 100, maxHp: 100,
-                lastAttackTime: 0,
-                attackCooldown: 1.0, // 攻擊間隔 1 秒
-                damage: 15,          // 每次攻擊造成 15 點傷害
-                box: new THREE.Box3()
+            return {
+                mesh: zGroup, skinMat: matSkin, hp: 100, maxHp: 100,
+                hpBarFg: hpBar.fg, hpBarGroup: hpBar.group,
+                legL, legR, animTime: Math.random() * 10,
+                radius: 0.5
             };
-            zombies.push(zombieData);
         }
 
-        // --- 控制輸入監聽 ---
-        function setupControls() {
-            document.addEventListener('keydown', (e) => {
-                keys[e.code] = true;
-                if (e.code === 'KeyR' && !isReloading) reload();
-            });
-            document.addEventListener('keyup', (e) => keys[e.code] = false);
+        for(let i=0; i<6; i++) {
+            zombies.push(createZombie((Math.random()-0.5)*35, (Math.random()-0.5)*35));
+        }
 
-            const startScreen = document.getElementById('start-screen');
-            startScreen.addEventListener('click', () => {
-                initAudio();
+        function spawnDamageNumber(pos, damage) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 128; canvas.height = 64;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#ffff00'; ctx.font = 'Bold 40px Arial';
+            ctx.strokeStyle = '#000000'; ctx.lineWidth = 4;
+            ctx.strokeText("-" + damage, 10, 50);
+            ctx.fillText("-" + damage, 10, 50);
+
+            const texture = new THREE.CanvasTexture(canvas);
+            const spriteMat = new THREE.SpriteMaterial({ map: texture });
+            const sprite = new THREE.Sprite(spriteMat);
+            sprite.scale.set(1.2, 0.6, 1);
+            sprite.position.copy(pos).add(new THREE.Vector3(0, 1.5, 0));
+            scene.add(sprite);
+
+            damageNumbers.push({ sprite, life: 30, velY: 0.03 });
+        }
+
+        // ---------------------------------------------------------
+        // 7. 玩家狀態與 AABB 物理動態碰撞檢測
+        // ---------------------------------------------------------
+        const player = new THREE.Group();
+        player.position.set(0, 2, 0);
+        scene.add(player);
+        player.add(camera);
+        camera.position.set(0, 1.4, 0);
+
+        let pitchAngle = 0, yawAngle = 0;
+        let recoilOffset = 0;
+        let playerVelY = 0;
+        const gravity = -24.0;
+        let isGrounded = false;
+        
+        const moveState = { f: 0, r: 0 };
+        let isAiming = false, isReloading = false;
+        let ammo = 30, reserveAmmo = 120, kills = 0, hp = 100;
+        const raycaster = new THREE.Raycaster();
+
+        // 玩家碰撞體邊界點 (半徑 0.35, 高度 1.8)
+        function checkPlayerCollision(newPos) {
+            const pBox = new THREE.Box3(
+                new THREE.Vector3(newPos.x - 0.35, newPos.y - 1.4, newPos.z - 0.35),
+                new THREE.Vector3(newPos.x + 0.35, newPos.y + 0.4, newPos.z + 0.35)
+            );
+            
+            for (let collider of colliders) {
+                if (pBox.intersectsBox(collider)) return true;
+            }
+            return false;
+        }
+
+        function handlePhysics(delta) {
+            // 重力處理
+            playerVelY += gravity * delta;
+            let nextY = player.position.y + playerVelY * delta;
+
+            // Y 軸地面判定 (腳下高為 Y=0.5 方塊頂面 + 身高 1.4)
+            if (nextY <= 1.9) {
+                nextY = 1.9;
+                playerVelY = 0;
+                isGrounded = true;
+            } else {
+                isGrounded = false;
+            }
+            player.position.y = nextY;
+
+            // X/Z 軸牆壁碰撞移動分量離散檢測
+            if (moveState.f !== 0 || moveState.r !== 0) {
+                const moveVec = new THREE.Vector3(moveState.r, 0, -moveState.f).normalize();
+                moveVec.applyAxisAngle(new THREE.Vector3(0, 1, 0), yawAngle);
+                const step = 7.0 * delta;
+
+                // 先試探 X 軸移動
+                const testX = new THREE.Vector3(player.position.x + moveVec.x * step, player.position.y, player.position.z);
+                if (!checkPlayerCollision(testX)) {
+                    player.position.x = testX.x;
+                }
+
+                // 再試探 Z 軸移動
+                const testZ = new THREE.Vector3(player.position.x, player.position.y, player.position.z + moveVec.z * step);
+                if (!checkPlayerCollision(testZ)) {
+                    player.position.z = testZ.z;
+                }
+            }
+
+            // 地圖邊界防落
+            player.position.x = Math.max(-MAP_SIZE + 0.8, Math.min(MAP_SIZE - 0.8, player.position.x));
+            player.position.z = Math.max(-MAP_SIZE + 0.8, Math.min(MAP_SIZE - 0.8, player.position.z));
+        }
+
+        // ---------------------------------------------------------
+        // 8. 射擊與換彈邏輯 (動畫與變數修復)
+        // ---------------------------------------------------------
+        function reload() {
+            if (isReloading || ammo === 30 || reserveAmmo <= 0) return;
+            isReloading = true;
+            playSound(400, 0.2, 'sine', 0.2);
+
+            let reloadProgress = 0;
+            const reloadInterval = setInterval(() => {
+                reloadProgress += 0.08;
+                weaponGroup.rotation.x = Math.sin(reloadProgress * Math.PI) * 0.6;
+                if (reloadProgress >= 1.0) {
+                    clearInterval(reloadInterval);
+                    weaponGroup.rotation.x = 0;
+                    const needed = 30 - ammo;
+                    const loaded = Math.min(needed, reserveAmmo);
+                    ammo += loaded;
+                    reserveAmmo -= loaded;
+                    document.getElementById('ammo').innerText = ammo;
+                    document.getElementById('reserve').innerText = reserveAmmo;
+                    isReloading = false;
+                }
+            }, 80);
+        }
+
+        function shoot() {
+            if (isReloading) return;
+            if (ammo <= 0) { reload(); return; }
+
+            ammo--;
+            document.getElementById('ammo').innerText = ammo;
+            playSound(320, 0.1, 'sawtooth', 0.3);
+
+            recoilOffset += 0.035;
+
+            flashMat.visible = true;
+            setTimeout(() => flashMat.visible = false, 30);
+            weaponGroup.position.z += 0.08;
+
+            raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+            const zMeshes = zombies.map(z => z.mesh);
+            const hits = raycaster.intersectObjects(zMeshes, true);
+
+            if (hits.length > 0) {
+                let hitObj = hits[0].object;
+                while (hitObj.parent && !zombies.some(z => z.mesh === hitObj)) hitObj = hitObj.parent;
+                const targetZ = zombies.find(z => z.mesh === hitObj);
+
+                if (targetZ) {
+                    const dmg = 35;
+                    targetZ.hp -= dmg;
+                    playSound(650, 0.08, 'sine', 0.3);
+
+                    spawnDamageNumber(hits[0].point, dmg);
+
+                    targetZ.skinMat.color.setHex(0xff3333);
+                    setTimeout(() => targetZ.skinMat.color.setHex(0x2e7d32), 100);
+
+                    const hm = document.getElementById('hitmarker');
+                    hm.style.opacity = '1'; setTimeout(() => hm.style.opacity = '0', 60);
+
+                    targetZ.hpBarFg.scale.x = Math.max(0, targetZ.hp / targetZ.maxHp);
+
+                    if (targetZ.hp <= 0) {
+                        scene.remove(targetZ.mesh);
+                        zombies.splice(zombies.indexOf(targetZ), 1);
+                        kills++; document.getElementById('kills').innerText = kills;
+
+                        setTimeout(() => zombies.push(createZombie((Math.random()-0.5)*35, (Math.random()-0.5)*35)), 2000);
+                    }
+                }
+            }
+        }
+
+        // ---------------------------------------------------------
+        // 9. 全平臺控制綁定與修復
+        // ---------------------------------------------------------
+        const instructions = document.getElementById('instructions');
+        let isLocked = false;
+
+        if (!isMobile) {
+            instructions.addEventListener('click', () => {
                 document.body.requestPointerLock();
+                playSound(100, 0.01, 'sine', 0.01); // 激活 AudioContext
             });
 
             document.addEventListener('pointerlockchange', () => {
-                if (document.pointerLockElement === document.body) {
-                    isPointerLocked = true;
-                    startScreen.style.display = 'none';
-                } else {
-                    isPointerLocked = false;
-                    if (player.hp > 0) startScreen.style.display = 'flex';
-                }
+                isLocked = (document.pointerLockElement === document.body);
+                instructions.style.display = isLocked ? 'none' : '';
             });
 
             document.addEventListener('mousemove', (e) => {
-                if (!isPointerLocked) return;
+                if (!isLocked) return;
                 yawAngle -= e.movementX * 0.0022;
                 pitchAngle -= e.movementY * 0.0022;
-                pitchAngle = Math.max(-Math.PI / 2.1, Math.min(Math.PI / 2.1, pitchAngle));
+                pitchAngle = Math.max(-Math.PI/2.1, Math.min(Math.PI/2.1, pitchAngle));
+            });
+
+            document.addEventListener('keydown', (e) => {
+                if (e.code === 'KeyW') moveState.f = 1;
+                if (e.code === 'KeyS') moveState.f = -1;
+                if (e.code === 'KeyA') moveState.r = -1;
+                if (e.code === 'KeyD') moveState.r = 1;
+                if (e.code === 'KeyR') reload();
+                if (e.code === 'Space' && isGrounded) { playerVelY = 8.5; isGrounded = false; }
+            });
+
+            document.addEventListener('keyup', (e) => {
+                if (['KeyW','KeyS'].includes(e.code)) moveState.f = 0;
+                if (['KeyA','KeyD'].includes(e.code)) moveState.r = 0;
             });
 
             document.addEventListener('mousedown', (e) => {
-                if (!isPointerLocked) return;
-                if (e.button === 0) shoot();       // 左鍵射擊
-                if (e.button === 2) isAiming = true; // 右鍵開鏡
+                if (!isLocked) return;
+                if (e.button === 0) shoot();
+                if (e.button === 2) isAiming = true;
             });
-
-            document.addEventListener('mouseup', (e) => {
-                if (e.button === 2) isAiming = false;
-            });
+            document.addEventListener('mouseup', (e) => { if (e.button === 2) isAiming = false; });
             document.addEventListener('contextmenu', e => e.preventDefault());
-        }
+        } else {
+            // 手機端邏輯修復
+            instructions.style.display = 'none';
+            document.getElementById('joystick-zone').style.display = 'block';
+            document.getElementById('btn-fire').style.display = 'flex';
+            document.getElementById('btn-ads').style.display = 'flex';
+            document.getElementById('btn-reload').style.display = 'flex';
+            document.getElementById('btn-jump').style.display = 'flex';
 
-        // --- 核心物理：AABB 碰撞箱檢測與解算 ---
-        function updatePlayerPhysics(dt) {
-            // 視角旋轉更新
-            camera.rotation.order = 'YXZ';
-            camera.rotation.y = yawAngle;
-            camera.rotation.x = pitchAngle;
+            const base = document.getElementById('joystick-base');
+            const stick = document.getElementById('joystick-stick');
+            let joyTouchId = null;
+            let lookTouchId = null;
+            let lastLookX = 0, lastLookY = 0;
 
-            // 鍵盤移動輸入
-            let moveDir = new THREE.Vector3();
-            if (keys['KeyW']) moveDir.z -= 1;
-            if (keys['KeyS']) moveDir.z += 1;
-            if (keys['KeyA']) moveDir.x -= 1;
-            if (keys['KeyD']) moveDir.x += 1;
-            moveDir.normalize();
-            moveDir.applyAxisAngle(new THREE.Vector3(0, 1, 0), yawAngle);
-
-            const speed = 5.0;
-            player.vel.x = moveDir.x * speed;
-            player.vel.z = moveDir.z * speed;
-
-            // 重力加速
-            player.vel.y -= 22.0 * dt;
-
-            // 跳躍處理
-            if (keys['Space'] && player.isGrounded) {
-                player.vel.y = 8.0;
-                player.isGrounded = false;
-            }
-
-            // --- 分軸獨立進行 AABB 碰撞檢測 (X, Z, Y) ---
-            // 1. X 軸運動
-            player.pos.x += player.vel.x * dt;
-            let playerBox = getPlayerBoundingBox(player.pos);
-            for (let block of terrainBlocks) {
-                if (playerBox.intersectsBox(block.box)) {
-                    if (player.vel.x > 0) player.pos.x = block.box.min.x - player.width / 2;
-                    else if (player.vel.x < 0) player.pos.x = block.box.max.x + player.width / 2;
-                    break;
-                }
-            }
-
-            // 2. Z 軸運動
-            player.pos.z += player.vel.z * dt;
-            playerBox = getPlayerBoundingBox(player.pos);
-            for (let block of terrainBlocks) {
-                if (playerBox.intersectsBox(block.box)) {
-                    if (player.vel.z > 0) player.pos.z = block.box.min.z - player.depth / 2;
-                    else if (player.vel.z < 0) player.pos.z = block.box.max.z + player.depth / 2;
-                    break;
-                }
-            }
-
-            // 3. Y 軸運動 (重力與踩踏)
-            player.pos.y += player.vel.y * dt;
-            player.isGrounded = false;
-            playerBox = getPlayerBoundingBox(player.pos);
-            for (let block of terrainBlocks) {
-                if (playerBox.intersectsBox(block.box)) {
-                    if (player.vel.y < 0) { // 著地
-                        player.pos.y = block.box.max.y;
-                        player.vel.y = 0;
-                        player.isGrounded = true;
-                    } else if (player.vel.y > 0) { // 頂到天花板
-                        player.pos.y = block.box.min.y - player.height;
-                        player.vel.y = 0;
-                    }
-                    break;
-                }
-            }
-
-            // 設定攝影機位置 (眼睛高度在玩家頭部)
-            camera.position.set(player.pos.x, player.pos.y + 1.6, player.pos.z);
-
-            // 掉落虛空保護
-            if (player.pos.y < -10) {
-                takeDamage(100); // 掉落死亡
-            }
-        }
-
-        // 取得玩家當前 AABB 立方體
-        function getPlayerBoundingBox(position) {
-            return new THREE.Box3(
-                new THREE.Vector3(position.x - player.width / 2, position.y, position.z - player.depth / 2),
-                new THREE.Vector3(position.x + player.width / 2, position.y + player.height, position.z + player.depth / 2)
-            );
-        }
-
-        // --- 射擊邏輯 (玩家 ➔ 殭屍傷害) ---
-        function shoot() {
-            const now = clock.getElapsedTime();
-            if (now - lastShootTime < shootInterval || isReloading) return;
-            if (ammoInClip <= 0) {
-                reload();
-                return;
-            }
-
-            lastShootTime = now;
-            ammoInClip--;
-            updateHUD();
-            playSound('shoot');
-
-            // 槍口閃光與後座力
-            muzzleFlash.material.opacity = 1;
-            setTimeout(() => muzzleFlash.material.opacity = 0, 40);
-            gunGroup.position.z += 0.05; // 後座力後移
-
-            // 射線檢測 (Raycasting)
-            const raycaster = new THREE.Raycaster();
-            raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
-
-            // 檢測是否擊中殭屍
-            const zombieMeshes = zombies.map(z => z.group);
-            const intersects = raycaster.intersectObjects(zombieMeshes, true);
-
-            if (intersects.length > 0) {
-                const hitMesh = intersects[0].object;
-                // 找到對應的殭屍資料
-                const hitZombie = zombies.find(z => z.group === hitMesh.parent || z.group === hitMesh.parent.parent);
-
-                if (hitZombie) {
-                    const damage = Math.floor(Math.random() * 15 + 25); // 25~40 傷害
-                    hitZombie.hp -= damage;
-                    playSound('hit');
-
-                    // 浮動傷害數字顯示
-                    showDamageNumber(intersects[0].point, damage);
-
-                    // 殭屍受擊紅閃
-                    hitZombie.group.traverse(child => {
-                        if (child.isMesh) {
-                            child.material.color.setHex(0xff0000);
-                            setTimeout(() => child.material.color.setHex(0xffffff), 100);
-                        }
-                    });
-
-                    // 殭屍死亡判定
-                    if (hitZombie.hp <= 0) {
-                        scene.remove(hitZombie.group);
-                        zombies.splice(zombies.indexOf(hitZombie), 1);
-                        player.score += 1;
-                        updateHUD();
-                        setTimeout(spawnZombie, 2000); // 2 秒後重新生成
-                    }
-                }
-            }
-        }
-
-        // --- 換彈機制 ---
-        function reload() {
-            if (isReloading || reserveAmmo <= 0 || ammoInClip === clipSize) return;
-            isReloading = true;
-            playSound('reload');
-
-            setTimeout(() => {
-                const needed = clipSize - ammoInClip;
-                const added = Math.min(needed, reserveAmmo);
-                ammoInClip += added;
-                reserveAmmo -= added;
-                isReloading = false;
-                updateHUD();
-            }, 1200);
-        }
-
-        // --- 殭屍 AI 與 殭屍 ➔ 玩家攻擊邏輯 ---
-        function updateZombies(dt, now) {
-            zombies.forEach(zombie => {
-                const zPos = zombie.group.position;
-                const pPos = player.pos;
-
-                // 更新殭屍碰撞箱 AABB
-                zombie.box.setFromObject(zombie.group);
-
-                // 計算與玩家的距離
-                const dx = pPos.x - zPos.x;
-                const dz = pPos.z - zPos.z;
-                const distToPlayer = Math.sqrt(dx * dx + dz * dz);
-
-                // 面向玩家
-                zombie.group.rotation.y = Math.atan2(dx, dz);
-
-                // 1. 移動邏輯（當距離大於近戰範圍時追擊）
-                if (distToPlayer > 1.2) {
-                    const moveSpeed = 2.2;
-                    zPos.x += (dx / distToPlayer) * moveSpeed * dt;
-                    zPos.z += (dz / distToPlayer) * moveSpeed * dt;
-
-                    // 擺動腿部動畫
-                    zombie.legL.rotation.x = Math.sin(now * 8) * 0.5;
-                    zombie.legR.rotation.x = -Math.sin(now * 8) * 0.5;
-                } else {
-                    // 2. 攻擊邏輯（進入近戰範圍，觸發攻擊冷卻）
-                    if (now - zombie.lastAttackTime >= zombie.attackCooldown) {
-                        zombie.lastAttackTime = now;
-                        takeDamage(zombie.damage); // 對玩家造成傷害
+            document.addEventListener('touchstart', (e) => {
+                playSound(100, 0.01, 'sine', 0.01);
+                for (let touch of e.changedTouches) {
+                    if (touch.clientX < window.innerWidth / 2 && joyTouchId === null) {
+                        joyTouchId = touch.identifier;
+                    } else if (touch.clientX >= window.innerWidth / 2 && lookTouchId === null) {
+                        lookTouchId = touch.identifier;
+                        lastLookX = touch.clientX;
+                        lastLookY = touch.clientY;
                     }
                 }
             });
+
+            document.addEventListener('touchmove', (e) => {
+                for (let touch of e.changedTouches) {
+                    if (touch.identifier === joyTouchId) {
+                        const rect = base.getBoundingClientRect();
+                        let dx = touch.clientX - (rect.left + rect.width / 2);
+                        let dy = touch.clientY - (rect.top + rect.height / 2);
+                        const dist = Math.min(Math.hypot(dx, dy), 40);
+                        const angle = Math.atan2(dy, dx);
+                        
+                        stick.style.transform = `translate(${Math.cos(angle)*dist}px, ${Math.sin(angle)*dist}px)`;
+                        moveState.r = Math.cos(angle) * (dist / 40);
+                        moveState.f = -Math.sin(angle) * (dist / 40);
+                    } else if (touch.identifier === lookTouchId) {
+                        const dx = touch.clientX - lastLookX;
+                        const dy = touch.clientY - lastLookY;
+                        yawAngle -= dx * 0.005;
+                        pitchAngle -= dy * 0.005;
+                        pitchAngle = Math.max(-Math.PI/2.1, Math.min(Math.PI/2.1, pitchAngle));
+                        lastLookX = touch.clientX;
+                        lastLookY = touch.clientY;
+                    }
+                }
+            });
+
+            document.addEventListener('touchend', (e) => {
+                for (let touch of e.changedTouches) {
+                    if (touch.identifier === joyTouchId) {
+                        joyTouchId = null;
+                        stick.style.transform = `translate(0px, 0px)`;
+                        moveState.f = 0; moveState.r = 0;
+                    } else if (touch.identifier === lookTouchId) {
+                        lookTouchId = null;
+                    }
+                }
+            });
+
+            document.getElementById('btn-fire').addEventListener('touchstart', (e) => { e.preventDefault(); shoot(); });
+            document.getElementById('btn-ads').addEventListener('touchstart', (e) => { e.preventDefault(); isAiming = !isAiming; });
+            document.getElementById('btn-reload').addEventListener('touchstart', (e) => { e.preventDefault(); reload(); });
+            document.getElementById('btn-jump').addEventListener('touchstart', (e) => { 
+                e.preventDefault(); 
+                if(isGrounded) { playerVelY = 8.5; isGrounded = false; } 
+            });
         }
 
-        // --- 玩家受傷與死亡結算 ---
-        function takeDamage(amount) {
-            if (player.hp <= 0) return;
+        // ---------------------------------------------------------
+        // 10. 遊戲主循環
+        // ---------------------------------------------------------
+        let prevTime = performance.now();
 
-            player.hp = Math.max(0, player.hp - amount);
-            playSound('playerHurt');
-            updateHUD();
-
-            // 紅色受傷閃爍
-            const hurtFlash = document.getElementById('hurt-flash');
-            hurtFlash.style.opacity = '1';
-            setTimeout(() => hurtFlash.style.opacity = '0', 150);
-
-            // 遊戲結束檢查
-            if (player.hp <= 0) {
-                document.exitPointerLock();
-                document.getElementById('final-score').innerText = player.score;
-                document.getElementById('gameover-screen').style.display = 'flex';
-            }
-        }
-
-        // --- 浮動傷害數字特效 ---
-        function showDamageNumber(pos3D, damage) {
-            const screenPos = pos3D.clone().project(camera);
-            const x = (screenPos.x * 0.5 + 0.5) * window.innerWidth;
-            const y = (-(screenPos.y * 0.5) + 0.5) * window.innerHeight;
-
-            const el = document.createElement('div');
-            el.className = 'damage-number';
-            el.innerText = `-${damage}`;
-            el.style.left = `${x}px`;
-            el.style.top = `${y}px`;
-            document.getElementById('game-container').appendChild(el);
-
-            setTimeout(() => el.remove(), 600);
-        }
-
-        // --- 更新介面 (HUD) ---
-        function updateHUD() {
-            document.getElementById('score').innerText = player.score;
-            document.getElementById('ammo-clip').innerText = ammoInClip;
-            document.getElementById('ammo-reserve').innerText = reserveAmmo;
-
-            const hpPercent = (player.hp / player.maxHp) * 100;
-            document.getElementById('health-bar-inner').style.width = `${hpPercent}%`;
-        }
-
-        // --- 重新開始遊戲 ---
-        function restartGame() {
-            player.hp = 100;
-            player.score = 0;
-            player.pos.set(0, 5, 0);
-            player.vel.set(0, 0, 0);
-            ammoInClip = 30;
-            reserveAmmo = 120;
-
-            // 清空殭屍重新生成
-            zombies.forEach(z => scene.remove(z.group));
-            zombies = [];
-            for (let i = 0; i < 6; i++) spawnZombie();
-
-            updateHUD();
-            document.getElementById('gameover-screen').style.display = 'none';
-            document.body.requestPointerLock();
-        }
-
-        // --- 視窗大小改變 ---
-        function onWindowResize() {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
-        }
-
-        // --- 主遊戲循環 (Game Loop) ---
         function animate() {
             requestAnimationFrame(animate);
+            const time = performance.now();
+            const delta = Math.min((time - prevTime) / 1000, 0.1);
 
-            const dt = Math.min(clock.getDelta(), 0.1); // 限制單影格最大時間差
-            const now = clock.getElapsedTime();
+            handlePhysics(delta);
 
-            if (player.hp > 0) {
-                updatePlayerPhysics(dt);
-                updateZombies(dt, now);
+            // 後座力復位與視角旋轉
+            recoilOffset = THREE.MathUtils.lerp(recoilOffset, 0, 14 * delta);
+            player.rotation.y = yawAngle;
+            camera.rotation.x = pitchAngle + recoilOffset;
 
-                // 開鏡 ADS 動畫插值
-                const targetFov = isAiming ? 45 : 75;
-                camera.fov += (targetFov - camera.fov) * 0.15;
-                camera.updateProjectionMatrix();
-
-                // 槍械位置平滑復位 (後座力歸位)
-                gunGroup.position.z += (0 - gunGroup.position.z) * 0.1;
-                const targetGunX = isAiming ? 0 : 0.18;
-                const targetGunY = isAiming ? -0.12 : -0.18;
-                gunGroup.position.x += (targetGunX - gunGroup.position.x) * 0.15;
-                gunGroup.position.y += (targetGunY - gunGroup.position.y) * 0.15;
+            // 槍械槍晃 (Sway) & 復位
+            if (moveState.f !== 0 || moveState.r !== 0) {
+                weaponGroup.position.y = THREE.MathUtils.lerp(weaponGroup.position.y, -0.05 + Math.sin(time * 0.012) * 0.015, 0.1);
+                weaponGroup.position.x = THREE.MathUtils.lerp(weaponGroup.position.x, Math.cos(time * 0.006) * 0.015, 0.1);
+            } else {
+                weaponGroup.position.x = THREE.MathUtils.lerp(weaponGroup.position.x, 0, 0.1);
+                weaponGroup.position.y = THREE.MathUtils.lerp(weaponGroup.position.y, 0, 0.1);
             }
 
+            // 開鏡瞄準動畫 (ADS)
+            const targetFov = isAiming ? 45 : 75;
+            camera.fov = THREE.MathUtils.lerp(camera.fov, targetFov, 14 * delta);
+            camera.updateProjectionMatrix();
+
+            const targetGunPos = isAiming ? new THREE.Vector3(-0.2, 0.02, -0.15) : new THREE.Vector3(0, 0, 0);
+            weaponGroup.position.lerp(targetGunPos, 14 * delta);
+
+            // 飄動傷害數字
+            for (let i = damageNumbers.length - 1; i >= 0; i--) {
+                const dn = damageNumbers[i];
+                dn.sprite.position.y += dn.velY;
+                dn.life--;
+                if (dn.life <= 0) {
+                    scene.remove(dn.sprite);
+                    damageNumbers.splice(i, 1);
+                }
+            }
+
+            // 殭屍 AI, 分離推擠碰撞與動畫
+            for (let i = 0; i < zombies.length; i++) {
+                const z1 = zombies[i];
+                const z1Pos = z1.mesh.position;
+                const pPos = player.position;
+
+                z1.hpBarGroup.lookAt(camera.position);
+
+                // 追擊玩家
+                const angle = Math.atan2(pPos.x - z1Pos.x, pPos.z - z1Pos.z);
+                z1.mesh.rotation.y = angle;
+
+                z1Pos.x += Math.sin(angle) * 2.5 * delta;
+                z1Pos.z += Math.cos(angle) * 2.5 * delta;
+
+                // 殭屍與殭屍之間的推擠（防重疊）
+                for (let j = i + 1; j < zombies.length; j++) {
+                    const z2 = zombies[j];
+                    const dist = z1Pos.distanceTo(z2.mesh.position);
+                    const minDist = z1.radius + z2.radius;
+                    if (dist < minDist && dist > 0) {
+                        const overlap = minDist - dist;
+                        const push = z1Pos.clone().sub(z2.mesh.position).normalize().multiplyScalar(overlap * 0.5);
+                        z1Pos.add(push);
+                        z2.mesh.position.sub(push);
+                    }
+                }
+
+                // 雙腿走路動畫
+                z1.animTime += delta * 8;
+                z1.legL.rotation.x = Math.sin(z1.animTime) * 0.6;
+                z1.legR.rotation.x = -Math.sin(z1.animTime) * 0.6;
+
+                // 玩家傷害判定
+                if (pPos.distanceTo(z1Pos) < 1.3) {
+                    hp = Math.max(0, hp - 0.25);
+                    document.getElementById('hp').innerText = Math.floor(hp);
+                    if (hp <= 0) { alert("你被殭屍吃掉了！擊殺數: " + kills); location.reload(); }
+                }
+            }
+
+            prevTime = time;
             renderer.render(scene, camera);
         }
 
-        // 啟動遊戲
-        window.onload = init;
+        animate();
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
     </script>
 </body>
 </html>
